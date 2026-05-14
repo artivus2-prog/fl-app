@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/game_server.dart';
+import 'game_screen.dart';
 
 class LobbyScreen extends StatefulWidget {
   final bool isHost;
@@ -57,6 +58,35 @@ class _LobbyScreenState extends State<LobbyScreen> {
         );
       }
     }
+  }
+
+  void _startGame() {
+    // Формируем список имён для игры
+    List<String> gamePlayers = [];
+    if (widget.isHost) {
+      gamePlayers.add('Хост');
+      for (int i = 1; i < _players.length; i++) {
+        gamePlayers.add('Игрок $i');
+      }
+    } else {
+      gamePlayers = List.from(_players);
+    }
+
+    // Если меньше 2 игроков, добавляем ботов
+    while (gamePlayers.length < 2) {
+      gamePlayers.add('Бот ${gamePlayers.length}');
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameScreen(
+          players: gamePlayers,
+          isHost: widget.isHost,
+          playerName: widget.isHost ? 'Хост' : 'Вы',
+        ),
+      ),
+    );
   }
 
   @override
@@ -173,13 +203,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _players.length >= 2
-                        ? () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Игра начинается!')),
-                            );
-                          }
-                        : null,
+                    onPressed: _players.length >= 2 ? _startGame : null,
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       textStyle: const TextStyle(fontSize: 18),

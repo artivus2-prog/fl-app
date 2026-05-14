@@ -16,15 +16,16 @@ class UnoCard {
     this.number,
   }) : id = '${color.name}_${type.name}_${number ?? ""}_${Random().nextInt(10000)}';
 
-  bool canPlayOn(UnoCard topCard) {
+  bool canPlayOn(UnoCard topCard, {CardColor? chosenColor}) {
     // Wild всегда можно
     if (color == CardColor.wild) return true;
     // Clear: можно на свой цвет или на другую clear
     if (type == CardType.clear) {
       return topCard.color == color || topCard.type == CardType.clear;
     }
-    // Совпадение по цвету
+    // Совпадение по цвету (включая chosenColor для диких карт)
     if (topCard.color == color) return true;
+    if (topCard.color == CardColor.wild && chosenColor == color) return true;
     // Совпадение по типу: одинаковые числа или одинаковые действия
     if (topCard.type == type) {
       if (type == CardType.number) {

@@ -53,7 +53,7 @@ class _GameScreenState extends State<GameScreen>
     if (!_isMyTurn) return false;
     return !_gameState
         .currentHand(widget.playerName)
-        .any((c) => c.canPlayOn(_gameState.topCard));
+        .any((c) => c.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor));
   }
 
   @override
@@ -276,7 +276,7 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
       return;
     }
-    final chosenCard = _bot.chooseCard(botHand, topCard, chosenColor);
+    final chosenCard = _bot.chooseCard(botHand, topCard, _gameState.chosenColor);
     if (chosenCard == null) {
       _gameState.playerHands[botName]!.add(_deck.draw());
       _gameState.drawPileCount = _deck.cards.length;
@@ -324,7 +324,7 @@ class _GameScreenState extends State<GameScreen>
         card.type == CardType.draw2 && card.color == _gameState.chosenColor;
     if (isPendingDraw2) { _respondToDraw4(card); return; }
     if (!_isMyTurn) return;
-    final canPlay = card.canPlayOn(_gameState.topCard);
+    final canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
     if (_lastTappedCardId == card.id && canPlay) {
       _lastTapTimer?.cancel();
       _lastTappedCardId = null;
@@ -484,7 +484,7 @@ class _GameScreenState extends State<GameScreen>
     final topCard = _gameState.topCard;
     Map<String, List<UnoCard>> groups = {};
     for (var card in hand) {
-      if (card.type == CardType.number && card.canPlayOn(topCard)) {
+      if (card.type == CardType.number && card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)) {
         groups.putIfAbsent('${card.number}', () => []);
         groups['${card.number}']!.add(card);
       }
@@ -733,7 +733,7 @@ class _GameScreenState extends State<GameScreen>
             child: totalCards <= 7 ? Row(mainAxisSize: MainAxisSize.min, children: List.generate(myHand.length, (index) {
               children: List.generate(myHand.length, (index) {
                 final card = myHand[index];
-                final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard);
+                final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
                 final isPendingDraw2 = isPendingResponse && card.type == CardType.draw2 && card.color == _gameState.chosenColor;
                 final isSelected = _selectedCardIds.contains(card.id);
                 final canTap = canPlay || isPendingDraw2;

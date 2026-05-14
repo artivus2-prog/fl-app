@@ -398,7 +398,7 @@ class _GameScreenState extends State<GameScreen>
 
   void _handleWildDraw(UnoCard wildCard) {
     final drawCount = wildCard.type == CardType.wildDraw8 ? 8 : 4;
-    final respondDrawCount = wildCard.type == CardType.wildDraw8 ? 12 : 6;
+    final respondDrawCount = wildCard.type == CardType.wildDraw8 ? 10 : 6;
     final nextIndex = _gameState.isClockwise
         ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
         : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
@@ -424,7 +424,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _respondToDraw4(UnoCard draw2Card) {
-    final respondDrawCount = _gameState.pendingDrawCount ?? 12;
+    final respondDrawCount = _gameState.pendingDrawCount ?? 10;
     _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == draw2Card.id);
     _gameState.discardPile.add(draw2Card);
     final prevIndex = _gameState.isClockwise

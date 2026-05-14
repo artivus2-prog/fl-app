@@ -8,6 +8,9 @@ class UnoGameState {
   bool isClockwise;
   String? winner;
   int drawPileCount;
+  CardColor? chosenColor; // Цвет, выбранный при +4
+  String? pendingResponsePlayer; // Кто должен ответить на +4
+  int? pendingDrawCount; // Сколько карт брать если не ответит
 
   UnoGameState({
     required this.drawPileCount,
@@ -17,6 +20,9 @@ class UnoGameState {
     this.currentPlayerIndex = 0,
     this.isClockwise = true,
     this.winner,
+    this.chosenColor,
+    this.pendingResponsePlayer,
+    this.pendingDrawCount,
   });
 
   UnoCard get topCard => discardPile.last;
@@ -42,6 +48,9 @@ class UnoGameState {
     'isClockwise': isClockwise,
     'winner': winner,
     'drawPileCount': drawPileCount,
+    'chosenColor': chosenColor?.name,
+    'pendingResponsePlayer': pendingResponsePlayer,
+    'pendingDrawCount': pendingDrawCount,
   };
 
   factory UnoGameState.fromJson(Map<String, dynamic> json) => UnoGameState(
@@ -56,5 +65,10 @@ class UnoGameState {
     currentPlayerIndex: json['currentPlayerIndex'] ?? 0,
     isClockwise: json['isClockwise'] ?? true,
     winner: json['winner'],
+    chosenColor: json['chosenColor'] != null 
+        ? CardColor.values.byName(json['chosenColor']) 
+        : null,
+    pendingResponsePlayer: json['pendingResponsePlayer'],
+    pendingDrawCount: json['pendingDrawCount'],
   );
 }

@@ -378,6 +378,7 @@ class _GameScreenState extends State<GameScreen>
       _applyClearCardEffect(lastCard.color);
     } else if (lastCard.type == CardType.wildDraw4) {
       _handleWildDraw4(lastCard);
+      // chosenColor остаётся — можно сбросить карту того же цвета
       skipNormalNextTurn = true;
     } else {
       _applyCardEffect(lastCard);
@@ -723,7 +724,10 @@ class _GameScreenState extends State<GameScreen>
                 final isPendingDraw2 = isPendingResponse && card.type == CardType.draw2 && card.color == _gameState.chosenColor;
                 final isSelected = _selectedCardIds.contains(card.id);
                 final canTap = canPlay || isPendingDraw2;
-                final overlapOffset = index * 18.0;
+                // Динамическое наложение: от 100% видимости до ~20%
+                final totalCards = myHand.length;
+                final maxOverlap = totalCards > 12 ? 14.0 : totalCards > 8 ? 12.0 : totalCards > 5 ? 10.0 : 6.0;
+                final overlapOffset = index * maxOverlap;
                 final topOffset = (canTap || isPendingDraw2) ? 0.0 : 18.0;
                 return Positioned(
                   left: overlapOffset,
@@ -734,7 +738,7 @@ class _GameScreenState extends State<GameScreen>
                       duration: const Duration(milliseconds: 200),
                       decoration: isSelected ? BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.amber.withOpacity(0.8), blurRadius: 16, spreadRadius: 3)]) : null,
                       child: Opacity(
-                        opacity: (canTap || isPendingDraw2) ? 1.0 : 0.55,
+                        opacity: (canTap || isPendingDraw2) ? 1.0 : 0.85,
                         child: Stack(children: [
                           _buildCardWidget(card),
                           if (isPendingDraw2)

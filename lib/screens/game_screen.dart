@@ -859,52 +859,38 @@ class _GameScreenState extends State<GameScreen>
                           padding: const EdgeInsets.symmetric(vertical: 14)),
                       child: const Text('Сбросить выбранные карты', style: TextStyle(fontWeight: FontWeight.bold))))),
 
-        // Карты игрока — ВЕЕРОМ
+        // Карты игрока — НАЛОЖЕНИЕ
         Expanded(flex: 3,
             child: myHand.isEmpty
                 ? const Center(child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38)))
-                : Center(child: LayoutBuilder(builder: (context, constraints) {
-                    final cardWidth = 75.0;
-                    final cardHeight = 110.0;
-                    final count = myHand.length;
-                    final fanAngle = (count * 4.0).clamp(8.0, 35.0) * (3.14159 / 180);
-                    final radius = (count * 4.0 + 180).clamp(200.0, 400.0);
-
-                    return GestureDetector(
+                : Center(
+                    child: GestureDetector(
                       onTap: () { if (_multiSelectMode) setState(() { _selectedCardIds.clear(); _multiSelectMode = false; }); },
-                      child: SizedBox(width: constraints.maxWidth, height: cardHeight + 50,
-                          child: Stack(clipBehavior: Clip.none, children: List.generate(count, (index) {
-                            final card = myHand[index];
-                            final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard);
-                            final isPendingDraw2 = isPendingResponse &&
-                                card.type == CardType.draw2 && card.color == _gameState.chosenColor;
-                            final isSelected = _selectedCardIds.contains(card.id);
-                            final canTap = canPlay || isPendingDraw2;
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: SizedBox(
+                          height: 130,
+                          child: Stack(
+                            children: List.generate(myHand.length, (index) {
+                              final card = myHand[index];
+                              final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard);
+                              final isPendingDraw2 = isPendingResponse &&
+                                  card.type == CardType.draw2 && card.color == _gameState.chosenColor;
+                              final isSelected = _selectedCardIds.contains(card.id);
+                              final canTap = canPlay || isPendingDraw2;
 
-                            final double angle;
-                            final double offsetY;
-                            if (count <= 3) {
-                              angle = (index - (count - 1) / 2) * fanAngle;
-                              offsetY = 0;
-                            } else {
-                              final normalizedIndex = (index - (count - 1) / 2) / ((count - 1) / 2);
-                              angle = normalizedIndex * fanAngle * 3;
-                              offsetY = (index - (count - 1) / 2).abs() * 3;
-                            }
+                              // Смещение: каждая карта на 20% ширины
+                              final overlapOffset = index * 18.0; // ~20% от 75
+                              final topOffset = (canTap || isPendingDraw2) ? 0.0 : 18.0;
 
-                            final centerX = constraints.maxWidth / 2;
-                            final dx = sin(angle) * radius;
-
-                            return Positioned(
-                              left: centerX - cardWidth / 2 + dx,
-                              bottom: 0 + offsetY,
-                              child: Transform.rotate(
-                                angle: angle,
+                              return Positioned(
+                                left: overlapOffset,
+                                top: topOffset,
                                 child: GestureDetector(
                                   onTap: () => _onCardTap(card),
                                   child: AnimatedContainer(
                                     duration: const Duration(milliseconds: 200),
-                                    margin: EdgeInsets.only(top: (canTap || isPendingDraw2) ? 0 : 18),
                                     decoration: isSelected
                                         ? BoxDecoration(borderRadius: BorderRadius.circular(16),
                                             boxShadow: [BoxShadow(color: Colors.amber.withOpacity(0.8), blurRadius: 16, spreadRadius: 3)])
@@ -925,11 +911,13 @@ class _GameScreenState extends State<GameScreen>
                                     ),
                                   ),
                                 ),
-                              ),
-                            );
-                          }))),
-                    );
-                  }))),
+                              );
+                            }),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
       ]),
     );
   }

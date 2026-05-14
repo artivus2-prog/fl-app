@@ -13,10 +13,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Debug - Show current directory
+        run: |
+          pwd
+          ls -la
+          cat pubspec.yaml
+      
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+      
+      - name: Verify Flutter project
+        run: |
+          if [ ! -f "pubspec.yaml" ]; then
+            echo "ERROR: pubspec.yaml not found!"
+            exit 1
+          fi
+          echo "Project root found successfully"
       
       - name: Get dependencies
         run: flutter pub get
@@ -41,6 +55,13 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+      
+      - name: Verify Flutter project
+        run: |
+          if [ ! -f "pubspec.yaml" ]; then
+            echo "ERROR: pubspec.yaml not found!"
+            exit 1
+          fi
       
       - name: Get dependencies
         run: flutter pub get

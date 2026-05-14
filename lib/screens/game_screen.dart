@@ -158,8 +158,11 @@ class _GameScreenState extends State<GameScreen>
     _unoTimer?.cancel();
     _pulseController.stop();
     _deckGlowController.stop();
-    // Сбрасываем chosenColor при смене хода
-    _gameState.chosenColor = null;
+    // Сбрасываем chosenColor только если верхняя карта не дикая
+    final top = _gameState.discardPile.isNotEmpty ? _gameState.discardPile.last : null;
+    if (top == null || top.color != CardColor.wild) {
+      _gameState.chosenColor = null;
+    }
     if (_gameState.winner != null && mounted) {
       _showWinDialog(_gameState.winner!);
       return;

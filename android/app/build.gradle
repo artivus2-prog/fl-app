@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.my_first_app"
+    namespace = "com.example.fl_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.my_first_app"
+        applicationId = "com.example.fl_app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -31,10 +31,6 @@ android {
             signingConfig = signingConfigs.debug
         }
     }
-}
-
-dependencies {
-    implementation "androidx.core:core-ktx:1.12.0"
 }
 
 flutter {

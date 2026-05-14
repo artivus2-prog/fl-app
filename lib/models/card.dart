@@ -17,20 +17,21 @@ class UnoCard {
   }) : id = '${color.name}_${type.name}_${number ?? ""}_${Random().nextInt(10000)}';
 
   bool canPlayOn(UnoCard topCard) {
-    // Clear card: можно только на свой цвет или на другую clear
+    // Wild всегда можно
+    if (color == CardColor.wild) return true;
+    // Clear: можно на свой цвет или на другую clear
     if (type == CardType.clear) {
       return topCard.color == color || topCard.type == CardType.clear;
     }
-    // Wild: всегда можно
-    if (color == CardColor.wild) return true;
-    // По цвету
+    // Совпадение по цвету
     if (topCard.color == color) return true;
-    // По типу (числа)
-    if (topCard.type == type && type == CardType.number) {
-      return topCard.number == number;
+    // Совпадение по типу: одинаковые числа или одинаковые действия
+    if (topCard.type == type) {
+      if (type == CardType.number) {
+        return topCard.number == number;
+      }
+      return true; // skip, reverse, draw2 — одинаковый тип
     }
-    // По типу (действия)
-    if (topCard.type == type && type != CardType.number) return true;
     return false;
   }
 

@@ -203,7 +203,7 @@ class _GameScreenState extends State<GameScreen>
       _gameState.pendingResponsePlayer = nextPlayer;
     } else {
       // Не может ответить — забирает всё
-      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(_gameState.pendingDrawCount));
+      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(_gameState.pendingDrawCount ?? 4));
       _gameState.pendingResponsePlayer = null;
       _gameState.pendingDrawCount = 0;
     }
@@ -735,8 +735,8 @@ class _GameScreenState extends State<GameScreen>
       child: SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12),
         child: SizedBox(height: 130,
           child: totalCards <= 7
-              ? Row(mainAxisSize: MainAxisSize.min, children: List.generate(totalCards, (i) => _buildCardItem(myHand[i], i, 0, isPending))))
-              : Stack(children: List.generate(totalCards, (i) => Positioned(left: i * overlapPx, top: _cardTopOffset(myHand[i], isPending), child: _buildCardItem(myHand[i], i, 0, isPending))))),
+              ? Row(mainAxisSize: MainAxisSize.min, children: List.generate(totalCards, (i) => _buildCardItem(myHand[i], i, 0, isPending)))
+              : Stack(children: List.generate(totalCards, (i) => Positioned(left: i * overlapPx, top: _cardTopOffset(myHand[i], isPending), child: _buildCardItem(myHand[i], i, 0, isPending)))),
       ),
     ));
   }

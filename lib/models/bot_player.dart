@@ -44,6 +44,9 @@ class BotPlayer {
 
     // Специальные карты
     for (var card in playable) {
+      if (card.type == CardType.wildDraw8) return card;
+    }
+    for (var card in playable) {
       if (card.type == CardType.wildDraw4) return card;
     }
     for (var card in playable) {

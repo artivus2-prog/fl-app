@@ -254,7 +254,7 @@ class _GameScreenState extends State<GameScreen>
         final prevIndex = _gameState.isClockwise
             ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
             : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
-        _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(6));
+        _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(respondDrawCount));
         _gameState.pendingResponsePlayer = null;
         _gameState.nextTurn();
       } else {
@@ -288,8 +288,8 @@ class _GameScreenState extends State<GameScreen>
     bool skipNormalNextTurn = false;
     if (chosenCard.type == CardType.clear) {
       _applyClearCardEffect(chosenCard.color);
-    } else if (chosenCard.type == CardType.wildDraw4) {
-      _handleWildDraw4(chosenCard);
+    } else if (chosenCard.type == CardType.wildDraw4 || chosenCard.type == CardType.wildDraw8) {
+      _handleWildDraw(chosenCard);
       skipNormalNextTurn = true;
     } else {
       _applyCardEffect(chosenCard);
@@ -396,7 +396,9 @@ class _GameScreenState extends State<GameScreen>
     if (_gameState.winner != null) _showWinDialog(_gameState.winner!);
   }
 
-  void _handleWildDraw4(UnoCard wildCard) {
+  void _handleWildDraw(UnoCard wildCard) {
+    final drawCount = wildCard.type == CardType.wildDraw8 ? 8 : 4;
+    final respondDrawCount = wildCard.type == CardType.wildDraw8 ? 12 : 6;
     final nextIndex = _gameState.isClockwise
         ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
         : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
@@ -414,20 +416,21 @@ class _GameScreenState extends State<GameScreen>
     }
     if (hasDraw2) {
       _gameState.pendingResponsePlayer = nextPlayer;
-      _gameState.pendingDrawCount = 6;
+      _gameState.pendingDrawCount = respondDrawCount;
       return;
     }
-    _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(4));
+    _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
     _gameState.pendingResponsePlayer = null;
   }
 
   void _respondToDraw4(UnoCard draw2Card) {
+    final respondDrawCount = _gameState.pendingDrawCount ?? 12;
     _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == draw2Card.id);
     _gameState.discardPile.add(draw2Card);
     final prevIndex = _gameState.isClockwise
         ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
         : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
-    _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(6));
+    _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(respondDrawCount));
     _gameState.pendingResponsePlayer = null;
     _gameState.nextTurn();
     _updateTurn();

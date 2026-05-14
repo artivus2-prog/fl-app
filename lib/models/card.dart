@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 enum CardColor { red, blue, green, yellow, wild }
-enum CardType { number, skip, reverse, draw2, wild, wildDraw4, clear }
+enum CardType { number, skip, reverse, draw2, wild, wildDraw4, wildDraw8, clear }
 
 class UnoCard {
   final CardColor color;
@@ -52,6 +52,7 @@ class UnoCard {
       case CardType.draw2: return '+2';
       case CardType.wild: return 'W';
       case CardType.wildDraw4: return '+4';
+      case CardType.wildDraw8: return '+8';
       case CardType.clear: return '🧹';
     }
   }
@@ -101,6 +102,10 @@ class UnoDeck {
     for (int i = 0; i < 4; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
+    }
+    // 4 карты +8
+    for (int i = 0; i < 4; i++) {
+      cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw8));
     }
   }
 

@@ -860,7 +860,8 @@ class _GameScreenState extends State<GameScreen>
                       child: const Text('Сбросить выбранные карты', style: TextStyle(fontWeight: FontWeight.bold))))),
 
         // Карты игрока — НАЛОЖЕНИЕ
-        Expanded(flex: 3,
+        Expanded(
+            flex: 3,
             child: myHand.isEmpty
                 ? const Center(child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38)))
                 : Center(

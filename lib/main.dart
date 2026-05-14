@@ -2,20 +2,21 @@ import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const UnoApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class UnoApp extends StatelessWidget {
+  const UnoApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Глобус',
+      title: 'Уно',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
+          seedColor: Colors.red,
           brightness: Brightness.dark,
         ),
         useMaterial3: true,

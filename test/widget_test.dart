@@ -3,12 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fl_app/screens/home_screen.dart';
 
 void main() {
-  testWidgets('На главном экране есть глобус и текст', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: HomeScreen()),
-    );
-
-    expect(find.text('Добро пожаловать!'), findsOneWidget);
-    expect(find.text('Исследуйте мир'), findsOneWidget);
+  testWidgets('Главный экран: есть кнопки', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
+    expect(find.text('Создать игру'), findsOneWidget);
+    expect(find.text('Подключиться к игре'), findsOneWidget);
+    expect(find.text('УНО'), findsOneWidget);
   });
 }

@@ -727,7 +727,7 @@ class _GameScreenState extends State<GameScreen>
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: SizedBox(
             height: 130,
-            child: Stack(
+            child: totalCards <= 7 ? Row(mainAxisSize: MainAxisSize.min, children: List.generate(myHand.length, (index) {
               children: List.generate(myHand.length, (index) {
                 final card = myHand[index];
                 final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard);
@@ -749,9 +749,8 @@ class _GameScreenState extends State<GameScreen>
                 }
                 final overlapOffset = index * overlapPx;
                 final topOffset = (canTap || isPendingDraw2) ? 0.0 : 18.0;
-                return Positioned(
-                  left: overlapOffset,
-                  top: topOffset,
+                return Padding(
+                  padding: EdgeInsets.only(top: topOffset),
                   child: GestureDetector(
                     onTap: () => _onCardTap(card),
                     child: AnimatedContainer(

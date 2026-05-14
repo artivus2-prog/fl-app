@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -56,6 +57,10 @@ class _GameScreenState extends State<GameScreen>
   @override
   void initState() {
     super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _deck = UnoDeck(seed: 42);
     _pulseController =
         AnimationController(vsync: this, duration: const Duration(seconds: 1));
@@ -68,6 +73,7 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _botTimer?.cancel();
     _unoTimer?.cancel();
     _pulseController.dispose();

@@ -1,3 +1,364 @@
+#!/bin/bash
+
+# ========== Обновлённый card.dart ==========
+cat > lib/models/card.dart << 'EOF'
+import 'dart:math';
+import 'package:flutter/material.dart';
+
+enum CardColor { red, blue, green, yellow, wild }
+enum CardType { number, skip, reverse, draw2, wild, wildDraw4, wildClear }
+
+class UnoCard {
+  final CardColor color;
+  final CardType type;
+  final int? number;
+  final String id;
+
+  UnoCard({
+    required this.color,
+    required this.type,
+    this.number,
+  }) : id = '${color.name}_${type.name}_${number ?? ""}_${Random().nextInt(10000)}';
+
+  bool canPlayOn(UnoCard topCard) {
+    if (color == CardColor.wild) return true;
+    if (topCard.color == color) return true;
+    if (topCard.type == type && type == CardType.number) {
+      return topCard.number == number;
+    }
+    if (topCard.type == type && type != CardType.number) return true;
+    return false;
+  }
+
+  Color get displayColor {
+    switch (color) {
+      case CardColor.red: return const Color(0xFFD50000);
+      case CardColor.blue: return const Color(0xFF2962FF);
+      case CardColor.green: return const Color(0xFF00C853);
+      case CardColor.yellow: return const Color(0xFFFFD600);
+      case CardColor.wild: return const Color(0xFF1A1A1A);
+    }
+  }
+
+  Color get textColor {
+    switch (color) {
+      case CardColor.yellow: return Colors.black;
+      default: return Colors.white;
+    }
+  }
+
+  String get displayText {
+    switch (type) {
+      case CardType.number: return '$number';
+      case CardType.skip: return '⊘';
+      case CardType.reverse: return '⟲';
+      case CardType.draw2: return '+2';
+      case CardType.wild: return 'W';
+      case CardType.wildDraw4: return '+4';
+      case CardType.wildClear: return '🧹';
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+    'color': color.name,
+    'type': type.name,
+    'number': number,
+    'id': id,
+  };
+
+  factory UnoCard.fromJson(Map<String, dynamic> json) => UnoCard(
+    color: CardColor.values.byName(json['color']),
+    type: CardType.values.byName(json['type']),
+    number: json['number'],
+  );
+}
+
+class UnoDeck {
+  List<UnoCard> cards = [];
+  final Random _random;
+
+  UnoDeck({int? seed}) : _random = Random(seed) {
+    _createDeck();
+    shuffle();
+  }
+
+  void _createDeck() {
+    cards.clear();
+    for (var color in [CardColor.red, CardColor.blue, CardColor.green, CardColor.yellow]) {
+      cards.add(UnoCard(color: color, type: CardType.number, number: 0));
+      for (int i = 1; i <= 9; i++) {
+        cards.add(UnoCard(color: color, type: CardType.number, number: i));
+        cards.add(UnoCard(color: color, type: CardType.number, number: i));
+      }
+      for (int i = 0; i < 2; i++) {
+        cards.add(UnoCard(color: color, type: CardType.skip));
+        cards.add(UnoCard(color: color, type: CardType.reverse));
+        cards.add(UnoCard(color: color, type: CardType.draw2));
+      }
+    }
+    for (int i = 0; i < 4; i++) {
+      cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
+      cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
+    }
+    for (int i = 0; i < 8; i++) {
+      cards.add(UnoCard(color: CardColor.wild, type: CardType.wildClear));
+    }
+  }
+
+  void shuffle() {
+    cards.shuffle(_random);
+  }
+
+  UnoCard draw() {
+    if (cards.isEmpty) {
+      _createDeck();
+      shuffle();
+    }
+    return cards.removeAt(0);
+  }
+
+  List<UnoCard> drawMultiple(int count) {
+    List<UnoCard> drawn = [];
+    for (int i = 0; i < count; i++) {
+      drawn.add(draw());
+    }
+    return drawn;
+  }
+}
+EOF
+
+# ========== Обновлённый home_screen.dart с кнопкой "Играть с ботами" ==========
+cat > lib/screens/home_screen.dart << 'EOF'
+import 'package:flutter/material.dart';
+import 'lobby_screen.dart';
+import 'game_screen.dart';
+import '../services/game_server.dart';
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1A0033), Color(0xFF0D001A), Color(0xFF1A0033)],
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Логотип УНО
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.8, end: 1.0),
+                  duration: const Duration(seconds: 2),
+                  curve: Curves.elasticOut,
+                  child: Container(
+                    width: 140,
+                    height: 140,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFF1744), Color(0xFFFF9100)],
+                      ),
+                      borderRadius: BorderRadius.circular(40),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFF1744).withOpacity(0.5),
+                          blurRadius: 30,
+                          spreadRadius: 5,
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'УНО',
+                        style: TextStyle(
+                          fontSize: 42,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 4,
+                          shadows: [
+                            Shadow(color: Colors.black38, blurRadius: 8, offset: Offset(2, 2)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Карточная игра',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[400],
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 48),
+
+                // Кнопка "Играть с ботами"
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final server = GameServer();
+                      final players = ['Вы', 'Бот 1', 'Бот 2', 'Бот 3'];
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => GameScreen(
+                            server: server,
+                            players: players,
+                            isHost: true,
+                            playerName: 'Вы',
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.computer, size: 24),
+                    label: const Text('Играть с ботами'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      backgroundColor: const Color(0xFF7C4DFF),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 8,
+                      shadowColor: const Color(0xFF7C4DFF).withOpacity(0.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Разделитель
+                Row(
+                  children: [
+                    const Expanded(child: Divider(color: Colors.white24)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('ИЛИ', style: TextStyle(color: Colors.grey[500], letterSpacing: 2)),
+                    ),
+                    const Expanded(child: Divider(color: Colors.white24)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Кнопка "Создать игру"
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LobbyScreen(isHost: true),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.add_circle_outline, size: 24),
+                    label: const Text('Создать игру'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      backgroundColor: const Color(0xFF00E676),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      elevation: 8,
+                      shadowColor: const Color(0xFF00E676).withOpacity(0.4),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Кнопка "Подключиться"
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      final ipController = TextEditingController();
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          backgroundColor: const Color(0xFF1A1A2E),
+                          title: const Row(
+                            children: [
+                              Icon(Icons.wifi, color: Color(0xFF448AFF)),
+                              SizedBox(width: 12),
+                              Text('Подключиться', style: TextStyle(color: Colors.white)),
+                            ],
+                          ),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Введите IP адрес хоста', style: TextStyle(color: Colors.grey)),
+                              const SizedBox(height: 16),
+                              TextField(
+                                controller: ipController,
+                                keyboardType: TextInputType.number,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  hintText: 'Например: 192.168.1.5',
+                                  hintStyle: const TextStyle(color: Colors.grey),
+                                  labelText: 'IP адрес',
+                                  labelStyle: const TextStyle(color: Color(0xFF448AFF)),
+                                  prefixIcon: const Icon(Icons.computer, color: Color(0xFF448AFF)),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF448AFF))),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF448AFF), width: 2)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена', style: TextStyle(color: Colors.grey))),
+                            ElevatedButton(
+                              onPressed: () {
+                                final ip = ipController.text.trim();
+                                if (ip.isNotEmpty) {
+                                  Navigator.pop(context);
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => LobbyScreen(isHost: false, hostIp: ip)));
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF448AFF)),
+                              child: const Text('Подключиться'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.wifi, size: 24),
+                    label: const Text('Подключиться к игре'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      foregroundColor: const Color(0xFF448AFF),
+                      side: const BorderSide(color: Color(0xFF448AFF), width: 2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+EOF
+
+# ========== Обновлённый game_screen.dart с красивыми картами ==========
+cat > lib/screens/game_screen.dart << 'EOF'
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -597,3 +958,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     }
   }
 }
+EOF
+
+echo "✅ Дизайн обновлён!"
+echo "  - Карты с белым овалом (как в настоящем УНО)"
+echo "  - Кнопка 'Играть с ботами' на главном экране"
+echo "  - Тёмная тема с фиолетовыми акцентами"
+echo "  - Анимированная кнопка УНО"
+echo "  - Уголки с цифрами на картах"
+echo "Запустите: git add -A && git commit -m 'Новый дизайн карт и кнопка Играть с ботами' && git push"

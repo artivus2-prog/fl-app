@@ -28,11 +28,18 @@ class UnoCard {
 
   Color get displayColor {
     switch (color) {
-      case CardColor.red: return const Color(0xFFE53935);
-      case CardColor.blue: return const Color(0xFF1E88E5);
-      case CardColor.green: return const Color(0xFF43A047);
-      case CardColor.yellow: return const Color(0xFFFDD835);
-      case CardColor.wild: return const Color(0xFF424242);
+      case CardColor.red: return const Color(0xFFD50000);
+      case CardColor.blue: return const Color(0xFF2962FF);
+      case CardColor.green: return const Color(0xFF00C853);
+      case CardColor.yellow: return const Color(0xFFFFD600);
+      case CardColor.wild: return const Color(0xFF1A1A1A);
+    }
+  }
+
+  Color get textColor {
+    switch (color) {
+      case CardColor.yellow: return Colors.black;
+      default: return Colors.white;
     }
   }
 
@@ -73,7 +80,6 @@ class UnoDeck {
 
   void _createDeck() {
     cards.clear();
-    // Стандартные карты
     for (var color in [CardColor.red, CardColor.blue, CardColor.green, CardColor.yellow]) {
       cards.add(UnoCard(color: color, type: CardType.number, number: 0));
       for (int i = 1; i <= 9; i++) {
@@ -86,12 +92,10 @@ class UnoDeck {
         cards.add(UnoCard(color: color, type: CardType.draw2));
       }
     }
-    // Дикие карты
     for (int i = 0; i < 4; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
     }
-    // 8 карт "Сброс цвета"
     for (int i = 0; i < 8; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildClear));
     }

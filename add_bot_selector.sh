@@ -1,3 +1,7 @@
+#!/bin/bash
+
+# ========== Обновлённый home_screen.dart с выбором количества ботов ==========
+cat > lib/screens/home_screen.dart << 'EOF'
 import 'package:flutter/material.dart';
 import 'lobby_screen.dart';
 import 'game_screen.dart';
@@ -361,3 +365,10 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
+EOF
+
+echo "✅ Выбор количества ботов добавлен!"
+echo "  - Слайдер от 1 до 4 ботов"
+echo "  - Показывает общее количество игроков"
+echo "  - Иконки ботов разных цветов"
+echo "Запустите: git add -A && git commit -m 'Выбор количества ботов 1-4' && git push"

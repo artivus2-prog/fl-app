@@ -31,7 +31,7 @@ class UnoCard {
       case CardColor.blue: return const Color(0xFF1E88E5);
       case CardColor.green: return const Color(0xFF43A047);
       case CardColor.yellow: return const Color(0xFFFDD835);
-      case CardColor.wild: return const Color(0xFF212121);
+      case CardColor.wild: return const Color(0xFF424242);
     }
   }
 
@@ -47,44 +47,42 @@ class UnoCard {
   }
 
   Map<String, dynamic> toJson() => {
-        'color': color.name,
-        'type': type.name,
-        'number': number,
-        'id': id,
-      };
+    'color': color.name,
+    'type': type.name,
+    'number': number,
+    'id': id,
+  };
 
   factory UnoCard.fromJson(Map<String, dynamic> json) => UnoCard(
-        color: CardColor.values.byName(json['color']),
-        type: CardType.values.byName(json['type']),
-        number: json['number'],
-      );
+    color: CardColor.values.byName(json['color']),
+    type: CardType.values.byName(json['type']),
+    number: json['number'],
+  );
 }
 
 class UnoDeck {
   List<UnoCard> cards = [];
+  final Random _random;
 
-  UnoDeck() {
+  UnoDeck({int? seed}) : _random = Random(seed) {
     _createDeck();
     shuffle();
   }
 
   void _createDeck() {
+    cards.clear();
     for (var color in [CardColor.red, CardColor.blue, CardColor.green, CardColor.yellow]) {
-      // Одна карта 0
       cards.add(UnoCard(color: color, type: CardType.number, number: 0));
-      // Две карты 1-9
       for (int i = 1; i <= 9; i++) {
         cards.add(UnoCard(color: color, type: CardType.number, number: i));
         cards.add(UnoCard(color: color, type: CardType.number, number: i));
       }
-      // Две карты действий
       for (int i = 0; i < 2; i++) {
         cards.add(UnoCard(color: color, type: CardType.skip));
         cards.add(UnoCard(color: color, type: CardType.reverse));
         cards.add(UnoCard(color: color, type: CardType.draw2));
       }
     }
-    // Дикие карты
     for (int i = 0; i < 4; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
@@ -92,7 +90,7 @@ class UnoDeck {
   }
 
   void shuffle() {
-    cards.shuffle(Random());
+    cards.shuffle(_random);
   }
 
   UnoCard draw() {

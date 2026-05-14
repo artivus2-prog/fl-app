@@ -1,14 +1,18 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/card.dart';
 import '../models/game_state.dart';
+import '../services/game_server.dart';
 
 class GameScreen extends StatefulWidget {
+  final GameServer server;
   final List<String> players;
   final bool isHost;
   final String playerName;
 
   const GameScreen({
     super.key,
+    required this.server,
     required this.players,
     required this.isHost,
     required this.playerName,
@@ -19,21 +23,28 @@ class GameScreen extends StatefulWidget {
 }
 
 class _GameScreenState extends State<GameScreen> {
-  late UnoDeck _deck;
   late UnoGameState _gameState;
+  late UnoDeck _deck;
   bool _isMyTurn = false;
-  UnoCard? _selectedCard;
+  bool _gameStarted = false;
+  String _direction = '➡️';
 
   @override
   void initState() {
     super.initState();
-    _startGame();
+    _deck = UnoDeck(seed: 42);
+
+    widget.server.onMessage = (GameMessage message) {
+      _handleMessage(message);
+    };
+
+    if (widget.isHost) {
+      _startGameAsHost();
+    }
   }
 
-  void _startGame() {
-    _deck = UnoDeck();
+  void _startGameAsHost() {
     Map<String, List<UnoCard>> hands = {};
-
     for (var player in widget.players) {
       hands[player] = _deck.drawMultiple(7);
     }
@@ -44,86 +55,177 @@ class _GameScreenState extends State<GameScreen> {
     } while (firstCard.type != CardType.number);
 
     _gameState = UnoGameState(
-      drawPile: _deck.cards,
+      drawPileCount: _deck.cards.length,
       discardPile: [firstCard],
       playerHands: hands,
       playerOrder: widget.players,
       currentPlayerIndex: 0,
     );
 
-    setState(() {
-      _isMyTurn = _gameState.currentPlayer == widget.playerName;
-    });
+    _gameStarted = true;
+    _updateTurn();
+
+    // Отправляем состояние всем
+    widget.server.broadcastAll(GameMessage(
+      type: GameMessageType.startGame,
+      data: _gameState.toJson(),
+    ));
+  }
+
+  void _handleMessage(GameMessage message) {
+    if (!mounted) return;
+
+    switch (message.type) {
+      case GameMessageType.startGame:
+        setState(() {
+          _gameState = UnoGameState.fromJson(message.data);
+          _gameStarted = true;
+          _updateTurn();
+        });
+        break;
+
+      case GameMessageType.playCard:
+        setState(() {
+          _gameState = UnoGameState.fromJson(message.data);
+          _updateTurn();
+        });
+        break;
+
+      case GameMessageType.drawCard:
+        setState(() {
+          _gameState = UnoGameState.fromJson(message.data);
+          _updateTurn();
+        });
+        break;
+
+      case GameMessageType.gameState:
+        setState(() {
+          _gameState = UnoGameState.fromJson(message.data);
+          _updateTurn();
+        });
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  void _updateTurn() {
+    _isMyTurn = _gameState.currentPlayer == widget.playerName;
+    _direction = _gameState.isClockwise ? '➡️' : '⬅️';
+
+    if (_gameState.winner != null && mounted) {
+      _showWinDialog(_gameState.winner!);
+    }
   }
 
   void _playCard(UnoCard card) {
-    if (!_isMyTurn) return;
+    if (!_isMyTurn || !_gameStarted) return;
     if (!card.canPlayOn(_gameState.topCard)) return;
 
-    setState(() {
-      _gameState.playerHands[widget.playerName]!.remove(card);
-      _gameState.discardPile.add(card);
+    // Удаляем карту из руки
+    _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == card.id);
+    _gameState.discardPile.add(card);
 
-      // Специальные эффекты
-      switch (card.type) {
-        case CardType.skip:
-          _gameState.nextTurn();
-          break;
-        case CardType.reverse:
-          _gameState.isClockwise = !_gameState.isClockwise;
-          if (_gameState.playerCount == 2) _gameState.nextTurn();
-          break;
-        case CardType.draw2:
-          _gameState.nextTurn();
-          final nextPlayer = _gameState.currentPlayer;
-          _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(2));
-          break;
-        case CardType.wildDraw4:
-          _gameState.nextTurn();
-          final nextPlayer = _gameState.currentPlayer;
-          _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(4));
-          break;
-        default:
-          break;
-      }
+    // Применяем эффекты
+    _applyCardEffect(card);
 
-      _gameState.nextTurn();
-      _isMyTurn = _gameState.currentPlayer == widget.playerName;
-      _selectedCard = null;
+    // Проверка победы
+    if (_gameState.playerHands[widget.playerName]!.isEmpty) {
+      _gameState.winner = widget.playerName;
+    }
 
-      // Проверка победы
-      if (_gameState.playerHands[widget.playerName]!.isEmpty) {
-        _gameState.winner = widget.playerName;
-        _showWinDialog();
-      }
-    });
+    _gameState.nextTurn();
+    _updateTurn();
+
+    // Отправляем новое состояние
+    widget.server.broadcastAll(GameMessage(
+      type: GameMessageType.gameState,
+      data: _gameState.toJson(),
+    ));
+
+    if (_gameState.winner != null) {
+      _showWinDialog(_gameState.winner!);
+    }
+  }
+
+  void _applyCardEffect(UnoCard card) {
+    switch (card.type) {
+      case CardType.skip:
+        _gameState.nextTurn();
+        break;
+      case CardType.reverse:
+        _gameState.isClockwise = !_gameState.isClockwise;
+        if (_gameState.playerCount == 2) _gameState.nextTurn();
+        break;
+      case CardType.draw2:
+        _gameState.nextTurn();
+        final nextPlayer = _gameState.currentPlayer;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(2));
+        break;
+      case CardType.wildDraw4:
+        _gameState.nextTurn();
+        final nextPlayer = _gameState.currentPlayer;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(4));
+        break;
+      default:
+        break;
+    }
   }
 
   void _drawCard() {
-    if (!_isMyTurn) return;
+    if (!_isMyTurn || !_gameStarted) return;
 
-    setState(() {
-      final card = _deck.draw();
-      _gameState.playerHands[widget.playerName]!.add(card);
-      _gameState.nextTurn();
-      _isMyTurn = _gameState.currentPlayer == widget.playerName;
-    });
+    final card = _deck.draw();
+    _gameState.playerHands[widget.playerName]!.add(card);
+    _gameState.drawPileCount = _deck.cards.length;
+    _gameState.nextTurn();
+    _updateTurn();
+
+    widget.server.broadcastAll(GameMessage(
+      type: GameMessageType.gameState,
+      data: _gameState.toJson(),
+    ));
   }
 
-  void _showWinDialog() {
+  void _showWinDialog(String winner) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('🎉 Победа!'),
-        content: Text('${_gameState.winner} выиграл!'),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Text('🎉', style: TextStyle(fontSize: 32)),
+            const SizedBox(width: 12),
+            Text(winner == widget.playerName ? 'Вы победили!' : 'Победа!'),
+          ],
+        ),
+        content: Text(
+          winner == widget.playerName
+              ? 'Отличная игра! Вы выиграли!'
+              : '$winner выиграл игру!',
+        ),
         actions: [
-          FilledButton(
+          TextButton(
             onPressed: () {
+              Navigator.pop(ctx);
+              widget.server.stop();
               Navigator.pop(context);
-              Navigator.pop(context); // На главный экран
             },
             child: const Text('В меню'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (widget.isHost) {
+                setState(() {
+                  _deck = UnoDeck(seed: Random().nextInt(99999));
+                  _startGameAsHost();
+                });
+              }
+            },
+            child: const Text('Играть снова'),
           ),
         ],
       ),
@@ -132,30 +234,55 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final myHand = _gameState.playerHands[widget.playerName] ?? [];
+    if (!_gameStarted) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 24),
+              Text('Ожидание начала игры...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final myHand = _gameState.currentHand(widget.playerName);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Уно'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Уно '),
+            Text(_direction, style: const TextStyle(fontSize: 20)),
+          ],
+        ),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.exit_to_app),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            widget.server.stop();
+            Navigator.pop(context);
+          },
         ),
         actions: [
           if (_isMyTurn)
             const Padding(
-              padding: EdgeInsets.only(right: 16),
+              padding: EdgeInsets.only(right: 12),
               child: Chip(
-                label: Text('ВАШ ХОД'),
+                label: Text('ВАШ ХОД', style: TextStyle(fontWeight: FontWeight.bold)),
                 backgroundColor: Colors.green,
+                avatar: Icon(Icons.play_arrow, size: 16),
               ),
             ),
         ],
       ),
       body: Column(
         children: [
-          // Верхняя карта и колода
+          // Игровое поле: колода + верхняя карта
           Expanded(
             flex: 2,
             child: Center(
@@ -169,33 +296,42 @@ class _GameScreenState extends State<GameScreen> {
                       width: 80,
                       height: 120,
                       decoration: BoxDecoration(
-                        color: Colors.red,
+                        gradient: const LinearGradient(
+                          colors: [Colors.red, Colors.deepOrange],
+                        ),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.4),
+                            blurRadius: 8,
+                            offset: const Offset(3, 3),
+                          ),
+                        ],
                       ),
                       child: const Center(
                         child: Text('УНО',
                             style: TextStyle(
                                 color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w900,
                                 fontSize: 18)),
                       ),
                     ),
                   ),
                   const SizedBox(width: 24),
                   // Верхняя карта
-                  _buildCard(_gameState.topCard, big: true),
+                  _buildCardWidget(_gameState.topCard, big: true),
                 ],
               ),
             ),
           ),
 
-          // Информация о других игроках
-          SizedBox(
-            height: 60,
+          // Полоска с игроками
+          Container(
+            height: 50,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: widget.players.length,
               itemBuilder: (context, index) {
                 final player = widget.players[index];
@@ -203,31 +339,32 @@ class _GameScreenState extends State<GameScreen> {
                 final cardCount = _gameState.playerHands[player]?.length ?? 0;
 
                 return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: isCurrent
-                        ? Colors.green.withOpacity(0.3)
-                        : Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                        ? Colors.green.withOpacity(0.4)
+                        : Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
                     border: isCurrent
-                        ? Border.all(color: Colors.green, width: 2)
-                        : null,
+                        ? Border.all(color: Colors.greenAccent, width: 2)
+                        : Border.all(color: Colors.white24),
                   ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (player == widget.playerName)
+                        const Icon(Icons.person, size: 14, color: Colors.yellow),
+                      const SizedBox(width: 4),
                       Text(
                         player,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
-                      Text(
-                        '$cardCount 🃏',
-                        style: const TextStyle(fontSize: 11),
-                      ),
+                      const SizedBox(width: 4),
+                      Text('$cardCount🃏', style: const TextStyle(fontSize: 10)),
                     ],
                   ),
                 );
@@ -237,14 +374,16 @@ class _GameScreenState extends State<GameScreen> {
 
           const SizedBox(height: 8),
 
-          // Мои карты
+          // Карты игрока
           Expanded(
             flex: 3,
             child: myHand.isEmpty
-                ? const Center(child: Text('Нет карт'))
+                ? const Center(
+                    child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                  )
                 : SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Row(
                       children: myHand.map((card) {
                         final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard);
@@ -252,9 +391,13 @@ class _GameScreenState extends State<GameScreen> {
                           onTap: canPlay ? () => _playCard(card) : null,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: Opacity(
-                              opacity: canPlay ? 1.0 : 0.5,
-                              child: _buildCard(card),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: EdgeInsets.only(top: canPlay ? 0 : 10),
+                              child: Opacity(
+                                opacity: canPlay ? 1.0 : 0.55,
+                                child: _buildCardWidget(card),
+                              ),
                             ),
                           ),
                         );
@@ -267,7 +410,7 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  Widget _buildCard(UnoCard card, {bool big = false}) {
+  Widget _buildCardWidget(UnoCard card, {bool big = false}) {
     final w = big ? 100.0 : 70.0;
     final h = big ? 150.0 : 105.0;
     final isWild = card.color == CardColor.wild;
@@ -281,9 +424,9 @@ class _GameScreenState extends State<GameScreen> {
         border: Border.all(color: Colors.white, width: 2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 4,
-            offset: const Offset(2, 2),
+            color: Colors.black.withOpacity(0.5),
+            blurRadius: 6,
+            offset: const Offset(2, 3),
           ),
         ],
       ),
@@ -294,20 +437,23 @@ class _GameScreenState extends State<GameScreen> {
             Text(
               card.displayText,
               style: TextStyle(
-                fontSize: big ? 36 : 28,
+                fontSize: big ? 40 : 30,
                 fontWeight: FontWeight.w900,
-                color: isWild ? Colors.white : Colors.white,
+                color: Colors.white,
+                shadows: const [
+                  Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(1, 1)),
+                ],
               ),
             ),
             if (isWild)
               Container(
-                width: w * 0.8,
-                height: 4,
+                width: w * 0.7,
+                height: 5,
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue],
                   ),
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
           ],

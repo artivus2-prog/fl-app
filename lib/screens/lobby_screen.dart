@@ -17,42 +17,74 @@ class _LobbyScreenState extends State<LobbyScreen> {
   final List<String> _players = [];
   String? _myIp;
   bool _connected = false;
+  String _playerName = '';
 
   @override
   void initState() {
     super.initState();
+    _playerName = widget.isHost ? 'Хост' : 'Гость';
+    
     if (widget.isHost) {
       _startHosting();
+    } else {
+      _connectToHost();
     }
   }
 
   Future<void> _startHosting() async {
     _myIp = await _server.getLocalIp();
-    await _server.startHost(() {
-      setState(() {
-        _players.clear();
-        _players.addAll(_server.players);
-      });
+    await _server.startHost(_playerName, () {
+      if (mounted) {
+        setState(() {
+          _players.clear();
+          _players.addAll(_server.players);
+        });
+      }
     });
     setState(() {
       _connected = true;
-      _players.insert(0, 'Вы (Хост)');
+      _players.clear();
+      _players.addAll(_server.players);
     });
   }
 
   Future<void> _connectToHost() async {
     if (widget.hostIp == null) return;
     try {
-      await _server.connectToHost(widget.hostIp!);
+      await _server.connectToHost(widget.hostIp!, _playerName);
       setState(() {
         _connected = true;
-        _players.add('Вы');
+        _players.clear();
+        _players.addAll(_server.players);
       });
+
+      _server.onMessage = (GameMessage message) {
+        if (mounted) {
+          setState(() {
+            _players.clear();
+            _players.addAll(_server.players);
+          });
+
+          if (message.type == GameMessageType.startGame) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => GameScreen(
+                  server: _server,
+                  players: List.from(_server.players),
+                  isHost: false,
+                  playerName: _server.playerName,
+                ),
+              ),
+            );
+          }
+        }
+      };
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Не удалось подключиться: $e'),
+            content: Text('Ошибка подключения: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -61,29 +93,14 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   void _startGame() {
-    // Формируем список имён для игры
-    List<String> gamePlayers = [];
-    if (widget.isHost) {
-      gamePlayers.add('Хост');
-      for (int i = 1; i < _players.length; i++) {
-        gamePlayers.add('Игрок $i');
-      }
-    } else {
-      gamePlayers = List.from(_players);
-    }
-
-    // Если меньше 2 игроков, добавляем ботов
-    while (gamePlayers.length < 2) {
-      gamePlayers.add('Бот ${gamePlayers.length}');
-    }
-
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (_) => GameScreen(
-          players: gamePlayers,
-          isHost: widget.isHost,
-          playerName: widget.isHost ? 'Хост' : 'Вы',
+          server: _server,
+          players: List.from(_players),
+          isHost: true,
+          playerName: _playerName,
         ),
       ),
     );
@@ -103,9 +120,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
             if (widget.isHost && _myIp != null) ...[
               Card(
                 color: Colors.blue.withOpacity(0.2),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
@@ -122,9 +137,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                       const SizedBox(height: 12),
                       Text(_myIp!,
                           style: const TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 2)),
+                              fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2)),
                       const SizedBox(height: 8),
                       const Text('Скажите друзьям этот адрес',
                           style: TextStyle(color: Colors.grey)),
@@ -135,34 +148,16 @@ class _LobbyScreenState extends State<LobbyScreen> {
               const SizedBox(height: 24),
             ],
             if (!widget.isHost && !_connected) ...[
-              Card(
-                color: Colors.orange.withOpacity(0.2),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+              const Card(
+                color: Colors.orange,
                 child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
+                  padding: EdgeInsets.all(20),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.wifi, color: Colors.orange),
-                          SizedBox(width: 8),
-                          Text('Подключение...',
-                              style: TextStyle(fontSize: 16, color: Colors.orange)),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 12),
-                      Text('Подключаемся к ${widget.hostIp}',
-                          style: const TextStyle(color: Colors.grey)),
-                      const SizedBox(height: 16),
-                      OutlinedButton(
-                        onPressed: _connectToHost,
-                        child: const Text('Подключиться'),
-                      ),
+                      CircularProgressIndicator(),
+                      SizedBox(width: 16),
+                      Text('Подключение...'),
                     ],
                   ),
                 ),
@@ -180,19 +175,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
             const SizedBox(height: 16),
             Expanded(
               child: _players.isEmpty
-                  ? const Center(child: Text('Ожидание игроков...', style: TextStyle(color: Colors.grey)))
+                  ? const Center(
+                      child: Text('Ожидание игроков...',
+                          style: TextStyle(color: Colors.grey, fontSize: 16)))
                   : ListView.builder(
                       itemCount: _players.length,
                       itemBuilder: (context, index) => Card(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         child: ListTile(
                           leading: CircleAvatar(
                             backgroundColor: Colors.primaries[index % Colors.primaries.length],
-                            child: Text('${index + 1}', style: const TextStyle(color: Colors.white)),
+                            child: Text('${index + 1}',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                           ),
                           title: Text(_players[index]),
-                          trailing: index == 0
-                              ? const Chip(label: Text('ХОСТ'), backgroundColor: Colors.green)
-                              : null,
+                          trailing: _players[index] == _playerName
+                              ? const Chip(label: Text('ВЫ'), backgroundColor: Colors.green)
+                              : index == 0
+                                  ? const Chip(label: Text('ХОСТ'), backgroundColor: Colors.blue)
+                                  : null,
                         ),
                       ),
                     ),
@@ -202,13 +203,16 @@ class _LobbyScreenState extends State<LobbyScreen> {
                 padding: const EdgeInsets.only(top: 16),
                 child: SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
+                  child: FilledButton.icon(
                     onPressed: _players.length >= 2 ? _startGame : null,
+                    icon: const Icon(Icons.play_arrow),
+                    label: Text(_players.length >= 2
+                        ? 'Начать игру'
+                        : 'Ожидайте игроков (минимум 2)'),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       textStyle: const TextStyle(fontSize: 18),
                     ),
-                    child: Text(_players.length >= 2 ? 'Начать игру' : 'Ожидайте игроков (минимум 2)'),
                   ),
                 ),
               ),
@@ -220,7 +224,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   @override
   void dispose() {
-    if (widget.isHost) _server.stopServer();
+    if (widget.isHost) _server.stop();
     super.dispose();
   }
 }

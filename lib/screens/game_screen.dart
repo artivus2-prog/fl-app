@@ -116,6 +116,23 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
+  void _startUnoTimer() {
+    _unoTimer?.cancel();
+    _unoSecondsLeft = 10;
+    _unoTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) { timer.cancel(); return; }
+      setState(() {
+        _unoSecondsLeft--;
+        if (_unoSecondsLeft <= 0) {
+          timer.cancel();
+          if (!_unoPressed && _gameState.currentHand(widget.playerName).length == 1) {
+            _applyUnoPenalty(widget.playerName);
+          }
+        }
+      });
+    });
+  }
+
   void _updateTurn() {
     _isMyTurn = _gameState.currentPlayer == widget.playerName;
     _direction = _gameState.isClockwise ? '➡️' : '⬅️';
@@ -125,6 +142,7 @@ class _GameScreenState extends State<GameScreen>
     _pendingWildCard = null;
     _unoTimer?.cancel();
     _pulseController.stop();
+    _unoTimer?.cancel();
     _deckGlowController.stop();
 
     if (_gameState.winner != null && mounted) {
@@ -137,6 +155,7 @@ class _GameScreenState extends State<GameScreen>
         _gameState.currentPlayer == widget.playerName) {
       _unoPressed = false;
       _pulseController.repeat(reverse: true);
+      _startUnoTimer();
     }
 
     // Запускаем подсветку колоды если нет играбельных карт
@@ -215,6 +234,7 @@ class _GameScreenState extends State<GameScreen>
   void _pressUno() {
     setState(() => _unoPressed = true);
     _pulseController.stop();
+    _unoTimer?.cancel();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('✅ УНО!'),

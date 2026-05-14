@@ -665,7 +665,13 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildTopCards(bool canDraw) {
-    return Expanded(flex: 2, child: Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+    return Expanded(
+      flex: 2,
+      child: Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children:[
       GestureDetector(onTap: canDraw ? _drawCard : null,
         child: AnimatedBuilder(animation: _deckGlowController, builder: (context, child) {
           final glow = (_noPlayableCards && !_gameState.pendingResponsePlayer!.isNotEmpty) ? _deckGlowController.value : 0.0;
@@ -747,12 +753,15 @@ class _GameScreenState extends State<GameScreen>
             height: 130,
             child: totalCards <= 7
                 ? Row(
+                    key: ValueKey('hand_row_${myHand.length}'),
                     mainAxisSize: MainAxisSize.min,
                     children: List.generate(totalCards, (i) => _buildCardItem(myHand[i], i, isPending)),
                   )
                 : Stack(
+                    key: ValueKey('hand_stack_${myHand.length}'),
                     children: List.generate(totalCards, (i) {
                       return Positioned(
+                        key: ValueKey('card_pos_$i'),
                         left: i * overlapPx,
                         top: _cardTopOffset(myHand[i], isPending),
                         child: _buildCardItem(myHand[i], i, isPending),
@@ -777,6 +786,7 @@ class _GameScreenState extends State<GameScreen>
     final isSelected = _selectedCardIds.contains(card.id);
     final canTap = canPlay || canRespond;
     return GestureDetector(
+      key: ValueKey('card_${card.id}'),
       onTap: () => _onCardTap(card),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),

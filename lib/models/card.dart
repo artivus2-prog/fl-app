@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 enum CardColor { red, blue, green, yellow, wild }
-enum CardType { number, skip, reverse, draw2, wild, wildDraw4, wildClear }
+enum CardType { number, skip, reverse, draw2, wild, wildDraw4, clear }
 
 class UnoCard {
   final CardColor color;
@@ -17,11 +17,19 @@ class UnoCard {
   }) : id = '${color.name}_${type.name}_${number ?? ""}_${Random().nextInt(10000)}';
 
   bool canPlayOn(UnoCard topCard) {
+    // Clear card: можно только на свой цвет или на другую clear
+    if (type == CardType.clear) {
+      return topCard.color == color || topCard.type == CardType.clear;
+    }
+    // Wild: всегда можно
     if (color == CardColor.wild) return true;
+    // По цвету
     if (topCard.color == color) return true;
+    // По типу (числа)
     if (topCard.type == type && type == CardType.number) {
       return topCard.number == number;
     }
+    // По типу (действия)
     if (topCard.type == type && type != CardType.number) return true;
     return false;
   }
@@ -36,13 +44,6 @@ class UnoCard {
     }
   }
 
-  Color get textColor {
-    switch (color) {
-      case CardColor.yellow: return Colors.black;
-      default: return Colors.white;
-    }
-  }
-
   String get displayText {
     switch (type) {
       case CardType.number: return '$number';
@@ -51,7 +52,7 @@ class UnoCard {
       case CardType.draw2: return '+2';
       case CardType.wild: return 'W';
       case CardType.wildDraw4: return '+4';
-      case CardType.wildClear: return '🧹';
+      case CardType.clear: return '🧹';
     }
   }
 
@@ -80,6 +81,7 @@ class UnoDeck {
 
   void _createDeck() {
     cards.clear();
+    // Стандартные карты
     for (var color in [CardColor.red, CardColor.blue, CardColor.green, CardColor.yellow]) {
       cards.add(UnoCard(color: color, type: CardType.number, number: 0));
       for (int i = 1; i <= 9; i++) {
@@ -91,13 +93,14 @@ class UnoDeck {
         cards.add(UnoCard(color: color, type: CardType.reverse));
         cards.add(UnoCard(color: color, type: CardType.draw2));
       }
+      // По 2 clear карты каждого цвета
+      cards.add(UnoCard(color: color, type: CardType.clear));
+      cards.add(UnoCard(color: color, type: CardType.clear));
     }
+    // Дикие карты
     for (int i = 0; i < 4; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
-    }
-    for (int i = 0; i < 8; i++) {
-      cards.add(UnoCard(color: CardColor.wild, type: CardType.wildClear));
     }
   }
 
@@ -114,10 +117,6 @@ class UnoDeck {
   }
 
   List<UnoCard> drawMultiple(int count) {
-    List<UnoCard> drawn = [];
-    for (int i = 0; i < count; i++) {
-      drawn.add(draw());
-    }
-    return drawn;
+    return List.generate(count, (_) => draw());
   }
 }

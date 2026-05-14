@@ -861,54 +861,89 @@ class _GameScreenState extends State<GameScreen>
 
         // Карты игрока — НАЛОЖЕНИЕ
         Expanded(
-            flex: 3,
-            child: myHand.isEmpty
-                ? const Center(child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38)))
-                : Center(
-                    child: GestureDetector(
-                      onTap: () { if (_multiSelectMode) setState(() { _selectedCardIds.clear(); _multiSelectMode = false; }); },
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: SizedBox(
-                          height: 130,
-                          child: Stack(
-                            children: List.generate(myHand.length, (index) {
-                              final card = myHand[index];
-                              final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard);
-                              final isPendingDraw2 = isPendingResponse &&
-                                  card.type == CardType.draw2 && card.color == _gameState.chosenColor;
-                              final isSelected = _selectedCardIds.contains(card.id);
-                              final canTap = canPlay || isPendingDraw2;
-
-                              // Смещение: каждая карта на 20% ширины
-                              final overlapOffset = index * 18.0; // ~20% от 75
-                              final topOffset = (canTap || isPendingDraw2) ? 0.0 : 18.0;
-
-                              return Positioned(
-                                left: overlapOffset,
-                                top: topOffset,
-                                child: GestureDetector(
-                                  onTap: () => _onCardTap(card),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    decoration: isSelected
-                                        ? BoxDecoration(borderRadius: BorderRadius.circular(16),
-                                            boxShadow: [BoxShadow(color: Colors.amber.withOpacity(0.8), blurRadius: 16, spreadRadius: 3)])
-                                        : null,
-                                    child: Opacity(
-                                      opacity: (canTap || isPendingDraw2) ? 1.0 : 0.55,
-                                      child: Stack(children: [
-                                        _buildCardWidget(card),
-                                        if (isPendingDraw2)
-                                          Positioned(top: -5, right: -5,
-                                              child: Container(padding: const EdgeInsets.all(4),
-                                                  decoration: const BoxDecoration(color: Colors.green, shape: BoxShape.circle),
-                                                  child: const Icon(Icons.reply, size: 16, color: Colors.white))),
-                                        if (isSelected)
-                                          const Positioned(top: -5, left: -5,
-                                              child: Icon(Icons.check_circle, color: Colors.amber, size: 22)),
-                                      ]),
+          flex: 3,
+          child: myHand.isEmpty
+              ? const Center(child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38)))
+              : GestureDetector(
+                  onTap: () {
+                    if (_multiSelectMode) {
+                      setState(() {
+                        _selectedCardIds.clear();
+                        _multiSelectMode = false;
+                      });
+                    }
+                  },
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: SizedBox(
+                      height: 130,
+                      child: Stack(
+                        children: List.generate(myHand.length, (index) {
+                          final card = myHand[index];
+                          final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard);
+                          final isPendingDraw2 = isPendingResponse &&
+                              card.type == CardType.draw2 &&
+                              card.color == _gameState.chosenColor;
+                          final isSelected = _selectedCardIds.contains(card.id);
+                          final canTap = canPlay || isPendingDraw2;
+                          final overlapOffset = index * 18.0;
+                          final topOffset = (canTap || isPendingDraw2) ? 0.0 : 18.0;
+                          return Positioned(
+                            left: overlapOffset,
+                            top: topOffset,
+                            child: GestureDetector(
+                              onTap: () => _onCardTap(card),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                decoration: isSelected
+                                    ? BoxDecoration(
+                                        borderRadius: BorderRadius.circular(16),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.amber.withOpacity(0.8),
+                                            blurRadius: 16,
+                                            spreadRadius: 3,
+                                          ),
+                                        ],
+                                      )
+                                    : null,
+                                child: Opacity(
+                                  opacity: (canTap || isPendingDraw2) ? 1.0 : 0.55,
+                                  child: Stack(
+                                    children: [
+                                      _buildCardWidget(card),
+                                      if (isPendingDraw2)
+                                        Positioned(
+                                          top: -5,
+                                          right: -5,
+                                          child: Container(
+                                            padding: const EdgeInsets.all(4),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.green,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(Icons.reply, size: 16, color: Colors.white),
+                                          ),
+                                        ),
+                                      if (isSelected)
+                                        const Positioned(
+                                          top: -5,
+                                          left: -5,
+                                          child: Icon(Icons.check_circle, color: Colors.amber, size: 22),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ),
+                ),
+        ),
                                     ),
                                   ),
                                 ),

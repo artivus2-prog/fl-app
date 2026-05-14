@@ -6,6 +6,7 @@ import '../models/card.dart';
 import '../models/game_state.dart';
 import '../models/bot_player.dart';
 import '../services/game_server.dart';
+import 'settings_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final GameServer server;
@@ -32,6 +33,7 @@ class _GameScreenState extends State<GameScreen>
   final BotPlayer _bot = BotPlayer();
   bool _isMyTurn = false;
   bool _gameStarted = false;
+  Color _backgroundColor = const Color(0xFF0A0A1A); // Фон игры
   String _direction = '➡️';
   final Set<String> _selectedCardIds = {};
   bool _multiSelectMode = false;
@@ -69,6 +71,11 @@ class _GameScreenState extends State<GameScreen>
     widget.server.onMessage =
         (GameMessage message) => _handleMessage(message);
     if (widget.isHost) _startGameAsHost();
+    _loadBackground();
+  }
+
+  Future<void> _loadBackground() async {
+    setState(() => _backgroundColor = SettingsScreenState.backgroundColor);
   }
 
   @override
@@ -545,7 +552,7 @@ class _GameScreenState extends State<GameScreen>
     if (_choosingColor) WidgetsBinding.instance.addPostFrameCallback((_) => _showColorPicker());
     if (!_gameStarted) {
       return const Scaffold(
-        backgroundColor: Color(0xFF0A0A1A),
+        backgroundColor: _backgroundColor,
         body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           CircularProgressIndicator(color: Color(0xFF7C4DFF)),
           SizedBox(height: 24),
@@ -560,7 +567,7 @@ class _GameScreenState extends State<GameScreen>
     final canDraw = _isMyTurn || isPendingResponse;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A1A),
+      backgroundColor: _backgroundColor,
       appBar: _buildAppBar(isPendingResponse),
       body: Column(children: [
         if (showUnoButton || (_unoPressed && myHand.length == 1)) _buildUnoButton(myHand),

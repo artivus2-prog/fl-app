@@ -261,7 +261,7 @@ class _GameScreenState extends State<GameScreen>
         final prevIndex = _gameState.isClockwise
             ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
             : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
-        _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(respondDrawCount));
+        _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(_gameState.pendingDrawCount ?? 10));
         _gameState.pendingResponsePlayer = null;
         _gameState.nextTurn();
       } else {
@@ -384,7 +384,7 @@ class _GameScreenState extends State<GameScreen>
     if (lastCard.type == CardType.clear) {
       _applyClearCardEffect(lastCard.color);
     } else if (lastCard.type == CardType.wildDraw4) {
-      _handleWildDraw4(lastCard);
+      _handleWildDraw(lastCard);
       // chosenColor остаётся — можно сбросить карту того же цвета
       skipNormalNextTurn = true;
     } else {
@@ -437,7 +437,7 @@ class _GameScreenState extends State<GameScreen>
     final prevIndex = _gameState.isClockwise
         ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
         : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
-    _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(respondDrawCount));
+    _gameState.playerHands[_gameState.playerOrder[prevIndex]]!.addAll(_deck.drawMultiple(_gameState.pendingDrawCount ?? 10));
     _gameState.pendingResponsePlayer = null;
     _gameState.nextTurn();
     _updateTurn();
@@ -551,7 +551,7 @@ class _GameScreenState extends State<GameScreen>
   Widget build(BuildContext context) {
     if (_choosingColor) WidgetsBinding.instance.addPostFrameCallback((_) => _showColorPicker());
     if (!_gameStarted) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: _backgroundColor,
         body: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           CircularProgressIndicator(color: Color(0xFF7C4DFF)),

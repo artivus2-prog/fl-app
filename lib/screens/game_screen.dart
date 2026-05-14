@@ -734,10 +734,20 @@ class _GameScreenState extends State<GameScreen>
                 final isPendingDraw2 = isPendingResponse && card.type == CardType.draw2 && card.color == _gameState.chosenColor;
                 final isSelected = _selectedCardIds.contains(card.id);
                 final canTap = canPlay || isPendingDraw2;
-                // Динамическое наложение: от 100% видимости до ~20%
+                // Карта занимает 75px. При 7 картах = 525px — помещается на экран (100% видимость).
+                // При большем количестве уменьшаем видимость на 3% на каждую карту сверх 7.
+                // 30 карт = 7 + 23*3% = 7 + 69% = 76% перекрытия → offset = 75 * 0.24 = 18px
                 final totalCards = myHand.length;
-                final maxOverlap = totalCards > 12 ? 14.0 : totalCards > 8 ? 12.0 : totalCards > 5 ? 10.0 : 6.0;
-                final overlapOffset = index * maxOverlap;
+                final baseVisible = 75.0; // ширина карты
+                double overlapPx;
+                if (totalCards <= 7) {
+                  overlapPx = 0; // 100% видимость
+                } else {
+                  final extraCards = totalCards - 7;
+                  final reductionPercent = (extraCards * 3.0).clamp(0.0, 80.0); // макс 80% перекрытия
+                  overlapPx = baseVisible * (reductionPercent / 100.0);
+                }
+                final overlapOffset = index * overlapPx;
                 final topOffset = (canTap || isPendingDraw2) ? 0.0 : 18.0;
                 return Positioned(
                   left: overlapOffset,

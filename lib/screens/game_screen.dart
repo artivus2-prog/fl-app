@@ -722,7 +722,9 @@ class _GameScreenState extends State<GameScreen>
   }
 
   Widget _buildPlayerHand(List<UnoCard> myHand, bool isPending) {
-    if (myHand.isEmpty) return const Expanded(flex: 3, child: Center(child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38))));
+    if (myHand.isEmpty) {
+      return const Expanded(flex: 3, child: Center(child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38))));
+    }
     final totalCards = myHand.length;
     double overlapPx = 0;
     if (totalCards > 7) {
@@ -730,15 +732,37 @@ class _GameScreenState extends State<GameScreen>
       final reductionPercent = (extraCards * 3.0).clamp(0.0, 80.0);
       overlapPx = 75.0 * (reductionPercent / 100.0);
     }
-    return Expanded(flex: 3, child: GestureDetector(
-      onTap: () { if (_multiSelectMode) setState(() { _selectedCardIds.clear(); _multiSelectMode = false; }); },
-      child: SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: SizedBox(height: 130,
-          child: totalCards <= 7
-              ? Row(mainAxisSize: MainAxisSize.min, children: List.generate(totalCards, (i) => _buildCardItem(myHand[i], i, 0, isPending)))
-              : Stack(children: List.generate(totalCards, (i) => Positioned(left: i * overlapPx, top: _cardTopOffset(myHand[i], isPending), child: _buildCardItem(myHand[i], i, 0, isPending)))),
+    return Expanded(
+      flex: 3,
+      child: GestureDetector(
+        onTap: () {
+          if (_multiSelectMode) {
+            setState(() { _selectedCardIds.clear(); _multiSelectMode = false; });
+          }
+        },
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: SizedBox(
+            height: 130,
+            child: totalCards <= 7
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(totalCards, (i) => _buildCardItem(myHand[i], i, isPending)),
+                  )
+                : Stack(
+                    children: List.generate(totalCards, (i) {
+                      return Positioned(
+                        left: i * overlapPx,
+                        top: _cardTopOffset(myHand[i], isPending),
+                        child: _buildCardItem(myHand[i], i, isPending),
+                      );
+                    }),
+                  ),
+          ),
+        ),
       ),
-    ));
+    );
   }
 
   double _cardTopOffset(UnoCard card, bool isPending) {

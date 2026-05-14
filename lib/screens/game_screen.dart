@@ -151,6 +151,8 @@ class _GameScreenState extends State<GameScreen>
     _unoTimer?.cancel();
     _pulseController.stop();
     _deckGlowController.stop();
+    // Сбрасываем chosenColor при смене хода
+    _gameState.chosenColor = null;
     if (_gameState.winner != null && mounted) {
       _showWinDialog(_gameState.winner!);
       return;
@@ -172,7 +174,6 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _applyClearCardEffect(CardColor color) {
-    _gameState.chosenColor = null;
     int totalCleared = 0;
     for (var player in _gameState.playerOrder) {
       final hand = _gameState.playerHands[player] ?? [];
@@ -433,7 +434,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _applyCardEffect(UnoCard card) {
-    _gameState.chosenColor = null;
+    // Не сбрасываем chosenColor — он сбрасывается в _updateTurn только для не-wild карт
     switch (card.type) {
       case CardType.skip: _gameState.nextTurn(); break;
       case CardType.reverse:

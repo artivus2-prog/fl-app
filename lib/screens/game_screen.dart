@@ -771,7 +771,7 @@ class _GameScreenState extends State<GameScreen>
     return (canPlay || canRespond) ? 0.0 : 18.0;
   }
 
-  Widget _buildCardItem(UnoCard card, int index, double extraTop, bool isPending) {
+  Widget _buildCardItem(UnoCard card, int index, bool isPending) {
     final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
     final canRespond = isPending && (card.type == CardType.draw2 || card.type == CardType.wildDraw4 || card.type == CardType.wildDraw8) && card.color == _gameState.chosenColor;
     final isSelected = _selectedCardIds.contains(card.id);

@@ -86,37 +86,37 @@ class GlobePainter extends CustomPainter {
 
     // Северная Америка
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(-20, -40), width: 60, height: 80),
+      Rect.fromCenter(center: const Offset(-20, -40), width: 60, height: 80),
       landPaint,
     );
 
     // Южная Америка
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(-10, 30), width: 35, height: 50),
+      Rect.fromCenter(center: const Offset(-10, 30), width: 35, height: 50),
       landPaint,
     );
 
     // Европа
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(30, -30), width: 50, height: 40),
+      Rect.fromCenter(center: const Offset(30, -30), width: 50, height: 40),
       landPaint,
     );
 
     // Африка
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(25, 20), width: 45, height: 65),
+      Rect.fromCenter(center: const Offset(25, 20), width: 45, height: 65),
       landPaint,
     );
 
     // Азия
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(70, -20), width: 70, height: 55),
+      Rect.fromCenter(center: const Offset(70, -20), width: 70, height: 55),
       landPaint,
     );
 
     // Австралия
     canvas.drawOval(
-      Rect.fromCenter(center: Offset(80, 50), width: 25, height: 20),
+      Rect.fromCenter(center: const Offset(80, 50), width: 25, height: 20),
       landPaint,
     );
 
@@ -124,7 +124,7 @@ class GlobePainter extends CustomPainter {
 
     // Атмосфера
     final atmospherePaint = Paint()
-      ..color = const Color(0xFF64B5F6).withValues(alpha: 0.2)
+      ..color = const Color(0xFF64B5F6).withOpacity(0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4;
     canvas.drawCircle(center, radius + 2, atmospherePaint);
@@ -134,7 +134,7 @@ class GlobePainter extends CustomPainter {
       center: const Alignment(-0.4, -0.4),
       radius: 0.6,
       colors: [
-        Colors.white.withValues(alpha: 0.3),
+        Colors.white.withOpacity(0.3),
         Colors.transparent,
       ],
     );

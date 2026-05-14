@@ -38,6 +38,7 @@ class _GameScreenState extends State<GameScreen>
   UnoCard? _pendingWildCard;
   Timer? _botTimer;
   bool _unoPressed = false;
+  int _unoSecondsLeft = 10;
   Timer? _unoTimer;
   late AnimationController _pulseController;
   late AnimationController _deckGlowController;

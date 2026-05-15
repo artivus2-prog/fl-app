@@ -16,30 +16,112 @@ class UnoCard {
     this.number,
   }) : id = '${color.name}_${type.name}_${number ?? ""}_${Random().nextInt(10000)}';
 
+  // ========== ПРАВИЛЬНАЯ ЛОГИКА ПРОВЕРКИ ХОДА ==========
   bool canPlayOn(UnoCard topCard, {CardColor? chosenColor}) {
-    // Дикие карты (W, +4, +8) всегда можно сыграть на любую карту
+    // 1. Дикие карты (W, +4, +8) всегда можно сыграть на любую карту
     if (color == CardColor.wild) return true;
     
-    // Clear: можно на свой цвет или на другую clear
+    // 2. Clear: можно на свой цвет или на другую clear
     if (type == CardType.clear) {
       return topCard.color == color || topCard.type == CardType.clear;
     }
     
-    // Совпадение по цвету
+    // 3. Совпадение по цвету
     if (topCard.color == color) return true;
     
-    // Если верхняя карта - дикая, используем выбранный цвет
-    // Это нужно для случая, когда на +4 кидают +2 (цвет должен совпадать с выбранным)
+    // 4. Если верхняя карта - дикая, используем выбранный цвет
     if (topCard.color == CardColor.wild && chosenColor != null && chosenColor == color) {
       return true;
     }
     
-    // Совпадение по типу/числу
+    // 5. Совпадение по типу (число, пропуск, реверс, доборные)
     if (topCard.type == type) {
       if (type == CardType.number) {
         return topCard.number == number;
       }
       // skip, reverse, draw2 - одинаковый тип
+      return true;
+    }
+    
+    // 6. ДОБОРНЫЕ КАРТЫ: можно ответить любой доборной на любую доборную
+    // +2 можно ответить +4, +8 (любого цвета)
+    // +4 можно ответить +4, +8 (любого цвета) или +2 ТОЛЬКО если цвет совпадает
+    // +8 можно ответить +8, +4 (любого цвета) или +2 ТОЛЬКО если цвет совпадает
+    
+    final bool isTopDrawCard = topCard.type == CardType.draw2 ||
+                               topCard.type == CardType.wildDraw4 ||
+                               topCard.type == CardType.wildDraw8;
+    
+    final bool isMyDrawCard = type == CardType.draw2 ||
+                              type == CardType.wildDraw4 ||
+                              type == CardType.wildDraw8;
+    
+    if (isTopDrawCard && isMyDrawCard) {
+      // +2 на +2, +4, +8 - всегда можно (любые цвета)
+      if (topCard.type == CardType.draw2) {
+        return true;
+      }
+      
+      // +4 на +4, +8 - всегда можно (любые цвета)
+      // +4 на +2 - только если цвет совпадает с выбранным
+      if (topCard.type == CardType.wildDraw4) {
+        if (type == CardType.wildDraw4 || type == CardType.wildDraw8) {
+          return true;
+        }
+        if (type == CardType.draw2) {
+          return chosenColor != null && color == chosenColor;
+        }
+      }
+      
+      // +8 на +8, +4 - всегда можно (любые цвета)
+      // +8 на +2 - только если цвет совпадает с выбранным
+      if (topCard.type == CardType.wildDraw8) {
+        if (type == CardType.wildDraw8 || type == CardType.wildDraw4) {
+          return true;
+        }
+        if (type == CardType.draw2) {
+          return chosenColor != null && color == chosenColor;
+        }
+      }
+    }
+    
+    return false;
+  }
+
+  // ========== ПРОВЕРКА МОЖНО ЛИ ОТВЕТИТЬ НА ДОБОР ==========
+  bool canRespondToDraw(CardColor? chosenColor, CardType attackCardType) {
+    // +2 на +2
+    if (type == CardType.draw2 && attackCardType == CardType.draw2) {
+      return true;
+    }
+    
+    // +2 на +4 (нужен совпадающий цвет)
+    if (type == CardType.draw2 && attackCardType == CardType.wildDraw4) {
+      return chosenColor != null && color == chosenColor;
+    }
+    
+    // +2 на +8 (нужен совпадающий цвет)
+    if (type == CardType.draw2 && attackCardType == CardType.wildDraw8) {
+      return chosenColor != null && color == chosenColor;
+    }
+    
+    // +4 на +4
+    if (type == CardType.wildDraw4 && attackCardType == CardType.wildDraw4) {
+      return true;
+    }
+    
+    // +4 на +8
+    if (type == CardType.wildDraw4 && attackCardType == CardType.wildDraw8) {
+      return true;
+    }
+    
+    // +8 на +4
+    if (type == CardType.wildDraw8 && attackCardType == CardType.wildDraw4) {
+      return true;
+    }
+    
+    // +8 на +8
+    if (type == CardType.wildDraw8 && attackCardType == CardType.wildDraw8) {
       return true;
     }
     
@@ -94,19 +176,22 @@ class UnoDeck {
 
   void _createDeck() {
     cards.clear();
-    // Стандартные карты
+    // Стандартные карты 0-9
     for (var color in [CardColor.red, CardColor.blue, CardColor.green, CardColor.yellow]) {
+      // 0 - одна карта
       cards.add(UnoCard(color: color, type: CardType.number, number: 0));
+      // 1-9 - по две карты
       for (int i = 1; i <= 9; i++) {
         cards.add(UnoCard(color: color, type: CardType.number, number: i));
         cards.add(UnoCard(color: color, type: CardType.number, number: i));
       }
+      // Действия
       for (int i = 0; i < 2; i++) {
         cards.add(UnoCard(color: color, type: CardType.skip));
         cards.add(UnoCard(color: color, type: CardType.reverse));
         cards.add(UnoCard(color: color, type: CardType.draw2));
       }
-      // По 2 clear карты каждого цвета
+      // Clear карты
       cards.add(UnoCard(color: color, type: CardType.clear));
       cards.add(UnoCard(color: color, type: CardType.clear));
     }
@@ -115,7 +200,7 @@ class UnoDeck {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
     }
-    // 2 карты +8
+    // +8 карты
     for (int i = 0; i < 2; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw8));
     }

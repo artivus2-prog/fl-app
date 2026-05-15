@@ -945,21 +945,98 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
-      _showResponseColorPickerForCard(card);
+      // Проверяем, не бот ли это
+      if (widget.playerName.startsWith('Бот')) {
+        // Если бот, выбираем цвет автоматически
+        final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
+        _onResponseColorChosenForBot(newColor);
+      } else {
+        _showResponseColorPickerForCard(card);
+      }
     }
+  }
+
+  void _onResponseColorChosenForBot(CardColor color) {
+    if (_pendingResponseCard == null) return;
+    
+    debugPrint('Бот выбрал цвет: $color для ответа на +4/+8');
+    
+    final card = _pendingResponseCard!;
+    final isDraw8 = card.type == CardType.wildDraw8;
+    final baseDraw = isDraw8 ? 8 : 4;
+    
+    _pendingResponseCard = null;
+    
+    _gameState.chosenColor = color;
+    _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
+    _gameState.pendingAttackCardType = card.type;
+    
+    final nextIndex = _gameState.isClockwise
+        ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
+        : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
+    final nextPlayer = _gameState.playerOrder[nextIndex];
+    final nextHand = _gameState.playerHands[nextPlayer] ?? [];
+    
+    if (_gameState.playerCount == 2) {
+      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
+      
+      if (canRespondNext && nextHand.length > 1) {
+        _gameState.pendingResponsePlayer = nextPlayer;
+      } else {
+        final drawCount = _gameState.pendingDrawCount ?? 0;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+        _gameState.pendingResponsePlayer = null;
+        _gameState.pendingDrawCount = 0;
+        _gameState.pendingAttackCardType = null;
+        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+          _gameState.winner = nextPlayer;
+        }
+        _gameState.nextTurn();
+      }
+    } else {
+      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
+      
+      if (canRespondNext && nextHand.length > 1) {
+        _gameState.pendingResponsePlayer = nextPlayer;
+      } else {
+        final drawCount = _gameState.pendingDrawCount ?? 0;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+        _gameState.pendingResponsePlayer = null;
+        _gameState.pendingDrawCount = 0;
+        _gameState.pendingAttackCardType = null;
+        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+          _gameState.winner = nextPlayer;
+        }
+        _gameState.nextTurn();
+      }
+    }
+    
+    _updateTurn();
+    _broadcastState();
   }
 
   void _showResponseColorPickerForCard(UnoCard card) {
     if (_isResponseColorPickerShowing) return;
     if (_choosingResponseColor) return;
+    if (!mounted) return;
+    
+    // Не показываем диалог для ботов
+    if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
       _choosingResponseColor = true;
     });
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _choosingResponseColor) {
+      if (mounted && _choosingResponseColor && !widget.playerName.startsWith('Бот')) {
         _showResponseColorPicker();
+      } else if (widget.playerName.startsWith('Бот') && _choosingResponseColor) {
+        // Если бот - сразу выбираем цвет
+        final botColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
+        _onResponseColorChosenForBot(botColor);
+        setState(() {
+          _choosingResponseColor = false;
+        });
       }
     });
   }
@@ -967,6 +1044,9 @@ class _GameScreenState extends State<GameScreen>
   void _showResponseColorPicker() {
     if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
     if (!mounted) return;
+    
+    // Дополнительная проверка - не показываем диалог для ботов
+    if (widget.playerName.startsWith('Бот')) return;
     
     _isResponseColorPickerShowing = true;
     
@@ -1402,6 +1482,10 @@ class _GameScreenState extends State<GameScreen>
       _throwDrawTwo(chosenCard);
       _gameState.nextTurn();
     } else if (chosenCard.type == CardType.wildDraw4 || chosenCard.type == CardType.wildDraw8) {
+      // Убедимся, что выбран цвет до вызова _throwWildDraw
+      if (_gameState.chosenColor == null && chosenCard.color == CardColor.wild) {
+        _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
+      }
       _throwWildDraw(chosenCard);
       if (_gameState.pendingResponsePlayer == null) _gameState.nextTurn();
     } else {

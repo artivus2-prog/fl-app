@@ -368,15 +368,11 @@ class _GameScreenState extends State<GameScreen>
   // ========== ОСТАЛЬНАЯ ЛОГИКА ==========
 
   void _applyClearCardEffect(CardColor color) {
-    // Игрок выбрасывает clear карту и ВСЕ свои карты ТАКОГО ЖЕ ЦВЕТА
     final currentPlayer = _gameState.currentPlayer;
     final hand = _gameState.playerHands[currentPlayer] ?? [];
-    
-    // Ищем карты ТОГО ЖЕ ЦВЕТА, что и clear карта
     final toRemove = hand.where((c) => c.color == color).toList();
     
     if (toRemove.isNotEmpty) {
-      // Сбрасываем все карты этого цвета
       for (var card in toRemove) {
         _gameState.playerHands[currentPlayer]!.removeWhere((c) => c.id == card.id);
         _gameState.discardPile.add(card);
@@ -399,7 +395,6 @@ class _GameScreenState extends State<GameScreen>
       }
     }
     
-    // Проверяем победу
     if (_gameState.playerHands[currentPlayer]!.isEmpty && _gameState.winner == null) {
       _gameState.winner = currentPlayer;
     }
@@ -416,7 +411,7 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _applyUnoPenalty(String player) {
-    if (_gameState.playerHands[player]!.length == 1 && !_unoPressed) {
+    if (_gameState.playerHands[player]!.length == 1 && !_unoPressed && !player.startsWith('Бот')) {
       setState(() {
         _gameState.playerHands[player]!.addAll(_deck.drawMultiple(2));
         _gameState.drawPileCount = _deck.cards.length;
@@ -451,6 +446,24 @@ class _GameScreenState extends State<GameScreen>
     ));
   }
 
+  void _applyCardEffect(UnoCard card) {
+    switch (card.type) {
+      case CardType.skip:
+        _gameState.nextTurn();
+        break;
+      case CardType.reverse:
+        if (_gameState.playerCount == 2) {
+          _gameState.nextTurn();
+        } else {
+          _gameState.isClockwise = !_gameState.isClockwise;
+          _gameState.nextTurn();
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
   void _botMove() {
     if (!mounted || !_isBotTurn || !widget.isHost) return;
     final botName = _gameState.currentPlayer;
@@ -458,9 +471,24 @@ class _GameScreenState extends State<GameScreen>
     final topCard = _gameState.topCard;
     final chosenColor = _gameState.chosenColor;
     
+    // Бот автоматически "нажимает" УНО, если у него 1 карта
     final botNeedUno = botHand.length == 1;
-    bool botUnoPressed = botNeedUno;
+    bool botUnoPressed = false;
+    
+    if (botNeedUno) {
+      botUnoPressed = true;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🤖 $botName нажал УНО!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(milliseconds: 500),
+          ),
+        );
+      }
+    }
 
+    // Ответ на pending
     if (_gameState.pendingResponsePlayer == botName) {
       if (_gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
         final canRespond = _canRespondToDraw(botName, _gameState.chosenColor!, _gameState.pendingAttackCardType!);
@@ -474,7 +502,17 @@ class _GameScreenState extends State<GameScreen>
             final handAfter = _gameState.playerHands[botName]!.length;
             
             if (handBefore == 2 && handAfter == 1 && !botUnoPressed) {
-              _applyUnoPenalty(botName);
+              _applyBotUnoPenalty(botName);
+            } else if (handBefore == 2 && handAfter == 1 && botUnoPressed) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ $botName успешно нажал УНО!'),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(milliseconds: 500),
+                  ),
+                );
+              }
             }
             
             final isDraw2 = responseCard.type == CardType.draw2;
@@ -554,7 +592,17 @@ class _GameScreenState extends State<GameScreen>
     final handAfter = _gameState.playerHands[botName]!.length;
     
     if (handBefore == 2 && handAfter == 1 && !botUnoPressed) {
-      _applyUnoPenalty(botName);
+      _applyBotUnoPenalty(botName);
+    } else if (handBefore == 2 && handAfter == 1 && botUnoPressed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $botName нажал УНО вовремя!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(milliseconds: 500),
+          ),
+        );
+      }
     }
 
     if (chosenCard.color == CardColor.wild) {
@@ -571,12 +619,7 @@ class _GameScreenState extends State<GameScreen>
       _throwWildDraw(chosenCard);
       if (_gameState.pendingResponsePlayer == null) _gameState.nextTurn();
     } else {
-      if (chosenCard.type == CardType.skip) {
-        _gameState.nextTurn();
-      } else if (chosenCard.type == CardType.reverse) {
-        _gameState.isClockwise = !_gameState.isClockwise;
-        if (_gameState.playerCount == 2) _gameState.nextTurn();
-      }
+      _applyCardEffect(chosenCard);
       _gameState.nextTurn();
     }
 
@@ -584,6 +627,24 @@ class _GameScreenState extends State<GameScreen>
     setState(() => _updateTurn());
     _broadcastState();
     if (_gameState.winner != null) _showWinDialog(_gameState.winner!);
+  }
+
+  void _applyBotUnoPenalty(String player) {
+    if (_gameState.playerHands[player]!.length == 1) {
+      setState(() {
+        _gameState.playerHands[player]!.addAll(_deck.drawMultiple(2));
+        _gameState.drawPileCount = _deck.cards.length;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ $player не нажал УНО! Штраф +2 карты!'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   void _onCardTap(UnoCard card) {
@@ -616,10 +677,16 @@ class _GameScreenState extends State<GameScreen>
     if (!_isMyTurn) return;
 
     final canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
-
+    
     if (_lastTappedCardId == card.id && canPlay) {
       _lastTapTimer?.cancel(); 
       _lastTappedCardId = null;
+      if (_multiSelectMode) {
+        setState(() {
+          _multiSelectMode = false;
+          _selectedCardIds.clear();
+        });
+      }
       if (card.color == CardColor.wild) {
         setState(() { _choosingColor = true; _pendingWildCard = card; });
       } else {
@@ -632,20 +699,32 @@ class _GameScreenState extends State<GameScreen>
     _lastTapTimer = Timer(const Duration(milliseconds: 350), () { 
       _lastTappedCardId = null; 
     });
+    
     if (!canPlay) return;
+    
     if (card.color == CardColor.wild) {
       setState(() { _choosingColor = true; _pendingWildCard = card; });
       return;
     }
+    
     final multiCards = _getMultiPlayableCards();
-    if (multiCards.isNotEmpty && card.type == CardType.number) {
+    if (multiCards.isNotEmpty && (card.type == CardType.number || card.type == CardType.skip || card.type == CardType.reverse)) {
       setState(() {
         _multiSelectMode = true;
-        _selectedCardIds.contains(card.id) 
-            ? _selectedCardIds.remove(card.id) 
-            : _selectedCardIds.add(card.id);
+        if (_selectedCardIds.contains(card.id)) {
+          _selectedCardIds.remove(card.id);
+        } else {
+          _selectedCardIds.add(card.id);
+        }
       });
       return;
+    }
+    
+    if (_multiSelectMode) {
+      setState(() {
+        _multiSelectMode = false;
+        _selectedCardIds.clear();
+      });
     }
     _executePlayCard([card]);
   }
@@ -661,9 +740,40 @@ class _GameScreenState extends State<GameScreen>
 
   void _confirmMultiPlay() {
     if (_selectedCardIds.isEmpty) return;
-    _executePlayCard(_gameState.currentHand(widget.playerName)
+    final cardsToPlay = _gameState.currentHand(widget.playerName)
         .where((c) => _selectedCardIds.contains(c.id))
-        .toList());
+        .toList();
+    setState(() {
+      _multiSelectMode = false;
+      _selectedCardIds.clear();
+    });
+    _executePlayCard(cardsToPlay);
+  }
+
+  List<UnoCard> _getMultiPlayableCards() {
+    if (!_isMyTurn) return [];
+    final hand = _gameState.currentHand(widget.playerName);
+    final topCard = _gameState.topCard;
+    
+    Map<String, List<UnoCard>> groups = {};
+    
+    for (var card in hand) {
+      if (card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)) {
+        String key;
+        if (card.type == CardType.number) {
+          key = 'num_${card.number}';
+        } else {
+          key = 'type_${card.type.name}';
+        }
+        groups.putIfAbsent(key, () => []);
+        groups[key]!.add(card);
+      }
+    }
+    
+    for (var group in groups.values) {
+      if (group.length >= 2) return group;
+    }
+    return [];
   }
 
   void _executePlayCard(List<UnoCard> cards) {
@@ -692,22 +802,30 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     
-    if (lastCard.type == CardType.clear) {
-      _applyClearCardEffect(lastCard.color);
-      _gameState.nextTurn();
-    } else if (lastCard.type == CardType.draw2) {
-      _throwDrawTwo(lastCard);
-      _gameState.nextTurn();
-    } else if (lastCard.type == CardType.wildDraw4 || lastCard.type == CardType.wildDraw8) {
-      _throwWildDraw(lastCard);
-      if (_gameState.pendingResponsePlayer == null) _gameState.nextTurn();
-    } else {
-      if (lastCard.type == CardType.skip) {
-        _gameState.nextTurn();
-      } else if (lastCard.type == CardType.reverse) {
-        _gameState.isClockwise = !_gameState.isClockwise;
-        if (_gameState.playerCount == 2) _gameState.nextTurn();
+    bool needNextTurn = true;
+    
+    for (var card in cards) {
+      if (card.type == CardType.clear) {
+        _applyClearCardEffect(card.color);
+      } else if (card.type == CardType.draw2) {
+        _throwDrawTwo(card);
+      } else if (card.type == CardType.wildDraw4 || card.type == CardType.wildDraw8) {
+        _throwWildDraw(card);
+        if (_gameState.pendingResponsePlayer != null) {
+          needNextTurn = false;
+        }
+      } else if (card.type == CardType.skip) {
+        needNextTurn = true;
+      } else if (card.type == CardType.reverse) {
+        if (_gameState.playerCount == 2) {
+          needNextTurn = true;
+        } else {
+          _gameState.isClockwise = !_gameState.isClockwise;
+        }
       }
+    }
+    
+    if (needNextTurn) {
       _gameState.nextTurn();
     }
     
@@ -734,23 +852,6 @@ class _GameScreenState extends State<GameScreen>
     _broadcastState();
   }
 
-  List<UnoCard> _getMultiPlayableCards() {
-    if (!_isMyTurn) return [];
-    final hand = _gameState.currentHand(widget.playerName);
-    final topCard = _gameState.topCard;
-    Map<String, List<UnoCard>> groups = {};
-    for (var card in hand) {
-      if (card.type == CardType.number && card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)) {
-        groups.putIfAbsent('${card.number}', () => []);
-        groups['${card.number}']!.add(card);
-      }
-    }
-    for (var group in groups.values) {
-      if (group.length >= 2) return group;
-    }
-    return [];
-  }
-
   void _showWinDialog(String winner) {
     showDialog(
       context: context, 
@@ -769,14 +870,14 @@ class _GameScreenState extends State<GameScreen>
         actions: [
           TextButton(
             onPressed: () { 
-              Navigator.pop(ctx); 
+              Navigator.of(ctx).pop();
               widget.server.stop(); 
-              Navigator.pop(context); 
+              Navigator.of(context).pop();
             },
             child: const Text('В меню', style: TextStyle(color: Colors.grey))),
           ElevatedButton(
             onPressed: () { 
-              Navigator.pop(ctx); 
+              Navigator.of(ctx).pop();
               if (widget.isHost) { 
                 setState(() {
                   _deck = UnoDeck(seed: Random().nextInt(99999)); 
@@ -946,13 +1047,13 @@ class _GameScreenState extends State<GameScreen>
           _buildTopCards(canDraw),
           _buildPlayerBar(),
           if (_multiSelectMode) 
-            _buildHint('Нажмите на карты чтобы выбрать для сброса', Colors.amber, Icons.touch_app),
+            _buildHint('Выберите несколько карт с одинаковым значением или типом для сброса', Colors.amber, Icons.touch_app),
           if (isPending) 
             _buildPendingHint(),
           if (_noPlayableCards && !isPending) 
             _buildHint('Нет доступных карт — нажмите на колоду', Colors.yellow, Icons.touch_app),
           const SizedBox(height: 4),
-          if (_multiSelectMode && _selectedCardIds.length >= 2)
+          if (_multiSelectMode && _selectedCardIds.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               child: SizedBox(
@@ -964,8 +1065,8 @@ class _GameScreenState extends State<GameScreen>
                     foregroundColor: Colors.black, 
                     padding: const EdgeInsets.symmetric(vertical: 14)
                   ),
-                  child: const Text('Сбросить выбранные карты', 
-                      style: TextStyle(fontWeight: FontWeight.bold))
+                  child: Text('Сбросить выбранные карты (${_selectedCardIds.length})', 
+                      style: const TextStyle(fontWeight: FontWeight.bold))
                 ),
               ),
             ),

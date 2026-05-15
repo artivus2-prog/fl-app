@@ -1017,6 +1017,15 @@ class _GameScreenState extends State<GameScreen>
     _broadcastState();
   }
 
+  void _cancelResponseColorPick() {
+    if (mounted) {
+      setState(() {
+        _choosingResponseColor = false;
+        _pendingResponseCard = null;
+      });
+    }
+  }
+
   void _applyClearCardEffect(CardColor color) {
     final currentPlayer = _gameState.currentPlayer;
     final hand = _gameState.playerHands[currentPlayer] ?? [];
@@ -1348,6 +1357,9 @@ class _GameScreenState extends State<GameScreen>
       canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
     }
     
+    if (!canPlay) return;
+    
+    // Обработка двойного тапа для отмены мульти-выбора
     if (_lastTappedCardId == card.id && canPlay) {
       _lastTapTimer?.cancel(); 
       _lastTappedCardId = null;
@@ -1358,25 +1370,26 @@ class _GameScreenState extends State<GameScreen>
         });
       }
       if (card.color == CardColor.wild) {
-        setState(() { _choosingColor = true; _pendingWildCard = card; });
+        _showColorPickerForCard(card);
       } else {
         _executePlayCard([card]);
       }
       return;
     }
+    
     _lastTappedCardId = card.id;
     _lastTapTimer?.cancel();
     _lastTapTimer = Timer(const Duration(milliseconds: 350), () { 
       _lastTappedCardId = null; 
     });
     
-    if (!canPlay) return;
-    
+    // Для диких карт - сразу показываем выбор цвета
     if (card.color == CardColor.wild) {
-      setState(() { _choosingColor = true; _pendingWildCard = card; });
+      _showColorPickerForCard(card);
       return;
     }
     
+    // Для числовых карт - проверяем возможность мульти-сброса
     if (card.type == CardType.number) {
       final multiCards = _getMultiPlayableCards();
       if (multiCards.isNotEmpty) {
@@ -1404,12 +1417,179 @@ class _GameScreenState extends State<GameScreen>
     _executePlayCard([card]);
   }
 
+  // Новый метод для показа выбора цвета с правильной обработкой
+  void _showColorPickerForCard(UnoCard card) {
+    if (_isColorPickerShowing) return;
+    if (_choosingColor) return;
+    
+    setState(() {
+      _choosingColor = true;
+      _pendingWildCard = card;
+    });
+    
+    // Небольшая задержка перед показом диалога, чтобы UI обновился
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _choosingColor && _pendingWildCard != null) {
+        _showColorPicker();
+      }
+    });
+  }
+
+  void _showColorPicker() {
+    if (!_choosingColor || _isColorPickerShowing) return;
+    if (_pendingWildCard == null) {
+      // Сброс состояния, если нет карты
+      setState(() {
+        _choosingColor = false;
+        _isColorPickerShowing = false;
+      });
+      return;
+    }
+    
+    _isColorPickerShowing = true;
+    
+    showDialog(
+      context: context, 
+      barrierDismissible: false,
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async {
+          // Отмена выбора цвета
+          _cancelColorPick();
+          return false;
+        },
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Row(
+            children: [
+              Icon(Icons.color_lens, color: Colors.purple, size: 28), 
+              SizedBox(width: 12),
+              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min, 
+            children: [
+              const Text(
+                'Дикая карта — выберите следующий цвет:', 
+                style: TextStyle(color: Colors.grey, fontSize: 14)
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
+                children: [
+                  _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx, _onColorChosen),
+                  _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx, _onColorChosen),
+                  _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx, _onColorChosen),
+                  _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx, _onColorChosen),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      // Диалог закрыт (либо выбор сделан, либо отменён)
+      if (mounted && _choosingColor) {
+        _cancelColorPick();
+      }
+      _isColorPickerShowing = false;
+    });
+  }
+
+  void _cancelColorPick() {
+    if (mounted) {
+      setState(() {
+        _choosingColor = false;
+        _pendingWildCard = null;
+      });
+    }
+  }
+
   void _onColorChosen(CardColor color) {
-    if (_pendingWildCard == null) return;
-    _choosingColor = false;
-    _isColorPickerShowing = false;
+    if (_pendingWildCard == null) {
+      _cancelColorPick();
+      return;
+    }
+    
+    final card = _pendingWildCard!;
+    
+    setState(() {
+      _choosingColor = false;
+      _pendingWildCard = null;
+    });
+    
     _gameState.chosenColor = color;
-    _executePlayCard([_pendingWildCard!]);
+    _executePlayCard([card]);
+  }
+
+  void _showResponseColorPicker() {
+    if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
+    if (!mounted) return;
+    
+    _isResponseColorPickerShowing = true;
+    
+    Timer(const Duration(seconds: 10), () {
+      if (_isResponseColorPickerShowing && mounted) {
+        Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
+        setState(() {
+          _isResponseColorPickerShowing = false;
+          _choosingResponseColor = false;
+          _pendingResponseCard = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Время выбора цвета истекло!'), backgroundColor: Colors.red),
+        );
+      }
+    });
+    
+    showDialog(
+      context: context, 
+      barrierDismissible: false,
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async {
+          _cancelResponseColorPick();
+          return false;
+        },
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.color_lens, color: Colors.orange, size: 32),
+              SizedBox(width: 12),
+              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Вы ответили на +4/+8!\nВыберите следующий цвет:',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx, _onResponseColorChosen),
+                  _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx, _onResponseColorChosen),
+                  _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx, _onResponseColorChosen),
+                  _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx, _onResponseColorChosen),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      if (mounted && _choosingResponseColor) {
+        _cancelResponseColorPick();
+      }
+      _isResponseColorPickerShowing = false;
+    });
   }
 
   void _confirmMultiPlay() {
@@ -1593,126 +1773,11 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  void _showColorPicker() {
-    if (!_choosingColor || _isColorPickerShowing) return;
-    _isColorPickerShowing = true;
-    
-    showDialog(
-      context: context, 
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Row(children: [
-          Icon(Icons.color_lens, color: Colors.purple, size: 28), 
-          SizedBox(width: 12),
-          Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
-        ]),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Дикая карта — выберите следующий цвет:', 
-              style: TextStyle(color: Colors.grey, fontSize: 14)),
-          const SizedBox(height: 20),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx),
-            _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
-            _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
-            _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
-          ]),
-        ]),
-      ),
-    ).then((_) {
-      if (_choosingColor && mounted) {
-        setState(() {
-          _choosingColor = false;
-          _isColorPickerShowing = false;
-          _pendingWildCard = null;
-        });
-      } else {
-        _isColorPickerShowing = false;
-      }
-    });
-  }
-  
-  void _showResponseColorPicker() {
-    if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
-    if (!mounted) return;
-    
-    _isResponseColorPickerShowing = true;
-    
-    Timer(const Duration(seconds: 10), () {
-      if (_isResponseColorPickerShowing && mounted) {
-        Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
-        setState(() {
-          _isResponseColorPickerShowing = false;
-          _choosingResponseColor = false;
-          _pendingResponseCard = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Время выбора цвета истекло!'), backgroundColor: Colors.red),
-        );
-      }
-    });
-    
-    showDialog(
-      context: context, 
-      barrierDismissible: false,
-      builder: (ctx) => WillPopScope(
-        onWillPop: () async => false,
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF1A1A2E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.color_lens, color: Colors.orange, size: 32),
-              SizedBox(width: 12),
-              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Вы ответили на +4/+8!\nВыберите следующий цвет:',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 14),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx),
-                  _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
-                  _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
-                  _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    ).then((_) {
-      if (mounted && _choosingResponseColor) {
-        setState(() {
-          _choosingResponseColor = false;
-          _isResponseColorPickerShowing = false;
-          _pendingResponseCard = null;
-        });
-      } else {
-        _isResponseColorPickerShowing = false;
-      }
-    });
-  }
-
-  Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildContext ctx) {
+  Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildContext ctx, Function(CardColor) onSelected) {
     return GestureDetector(
       onTap: () {
         Navigator.of(ctx).pop();
-        if (_choosingColor) {
-          _onColorChosen(color);
-        } else if (_choosingResponseColor) {
-          _onResponseColorChosen(color);
-        }
+        onSelected(color);
       },
       child: Column(
         children: [

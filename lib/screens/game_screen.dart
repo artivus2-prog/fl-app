@@ -368,29 +368,40 @@ class _GameScreenState extends State<GameScreen>
   // ========== ОСТАЛЬНАЯ ЛОГИКА ==========
 
   void _applyClearCardEffect(CardColor color) {
-    int totalCleared = 0;
+    // Игрок выбрасывает clear карту и ВСЕ свои карты ТАКОГО ЖЕ ЦВЕТА
+    final currentPlayer = _gameState.currentPlayer;
+    final hand = _gameState.playerHands[currentPlayer] ?? [];
     
-    for (var player in _gameState.playerOrder) {
-      final hand = _gameState.playerHands[player] ?? [];
-      final toRemove = hand.where((c) => c.color == color).toList();
-      totalCleared += toRemove.length;
+    // Ищем карты ТОГО ЖЕ ЦВЕТА, что и clear карта
+    final toRemove = hand.where((c) => c.color == color).toList();
+    
+    if (toRemove.isNotEmpty) {
+      // Сбрасываем все карты этого цвета
       for (var card in toRemove) {
-        _gameState.playerHands[player]!.removeWhere((c) => c.id == card.id);
+        _gameState.playerHands[currentPlayer]!.removeWhere((c) => c.id == card.id);
+        _gameState.discardPile.add(card);
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('🧹 Вы сбросили ${toRemove.length} ${_colorName(color)} карт вместе с clear!'),
+          backgroundColor: _getColorForCard(color),
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('⚠️ У вас нет ${_colorName(color)} карт для сброса!'),
+          backgroundColor: Colors.grey,
+          duration: const Duration(seconds: 1),
+        ));
       }
     }
     
-    if (mounted && totalCleared > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('🧹 Сброшено $totalCleared карт цвета ${_colorName(color)}!'),
-        backgroundColor: _getColorForCard(color),
-        duration: const Duration(seconds: 3),
-      ));
-    }
-    
-    for (var player in _gameState.playerOrder) {
-      if (_gameState.playerHands[player]!.isEmpty && _gameState.winner == null) {
-        _gameState.winner = player;
-      }
+    // Проверяем победу
+    if (_gameState.playerHands[currentPlayer]!.isEmpty && _gameState.winner == null) {
+      _gameState.winner = currentPlayer;
     }
   }
 
@@ -1282,22 +1293,20 @@ class _GameScreenState extends State<GameScreen>
     
     double cardSpacing;
     
-    if (totalCards <= 7) {
+    if (totalCards <= 5) {
       cardSpacing = 8.0;
+    } else if (totalCards <= 8) {
+      cardSpacing = 20.0;
+    } else if (totalCards <= 12) {
+      cardSpacing = 15.0;
     } else {
-      const double minVisiblePart = 0.5;
-      const double maxVisiblePart = 0.65;
-      
-      final double visiblePart = maxVisiblePart - 
-          ((totalCards - 7) / 20).clamp(0.0, 1.0) * (maxVisiblePart - minVisiblePart);
-      
-      cardSpacing = cardWidth * visiblePart;
-      
-      final double totalWidth = cardWidth + (totalCards - 1) * cardSpacing;
-      if (totalWidth > availableWidth) {
-        cardSpacing = (availableWidth - cardWidth) / (totalCards - 1);
-        if (cardSpacing < cardWidth * 0.5) cardSpacing = cardWidth * 0.5;
-      }
+      cardSpacing = 12.0;
+    }
+    
+    final double totalWidth = cardWidth + (totalCards - 1) * cardSpacing;
+    if (totalWidth > availableWidth) {
+      cardSpacing = (availableWidth - cardWidth) / (totalCards - 1);
+      if (cardSpacing < 8) cardSpacing = 8;
     }
     
     return Expanded(
@@ -1314,93 +1323,90 @@ class _GameScreenState extends State<GameScreen>
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: SizedBox(
-            height: cardHeight + 20,
-            width: cardWidth + (totalCards - 1) * cardSpacing,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: List.generate(totalCards, (i) {
-                final card = myHand[i];
-                final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: List.generate(totalCards, (i) {
+              final card = myHand[i];
+              final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
+              
+              bool canRespond = false;
+              if (isPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
+                final attackType = _gameState.pendingAttackCardType!;
                 
-                bool canRespond = false;
-                if (isPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
-                  final attackType = _gameState.pendingAttackCardType!;
-                  
-                  if (card.type == CardType.draw2) {
-                    if (attackType == CardType.draw2) {
-                      canRespond = true;
-                    } else if (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8) {
-                      canRespond = card.color == _gameState.chosenColor;
-                    }
-                  } else if (card.type == CardType.wildDraw4) {
-                    canRespond = (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8);
-                  } else if (card.type == CardType.wildDraw8) {
-                    canRespond = (attackType == CardType.wildDraw8);
+                if (card.type == CardType.draw2) {
+                  if (attackType == CardType.draw2) {
+                    canRespond = true;
+                  } else if (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8) {
+                    canRespond = card.color == _gameState.chosenColor;
                   }
+                } else if (card.type == CardType.wildDraw4) {
+                  canRespond = (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8);
+                } else if (card.type == CardType.wildDraw8) {
+                  canRespond = (attackType == CardType.wildDraw8);
                 }
-                
-                final isSelected = _selectedCardIds.contains(card.id);
-                final canTap = canPlay || canRespond;
-                
-                final double leftOffset = i * cardSpacing;
-                
-                return Positioned(
-                  key: ValueKey('card_${card.id}'),
-                  left: leftOffset,
+              }
+              
+              final isSelected = _selectedCardIds.contains(card.id);
+              final canTap = canPlay || canRespond;
+              
+              return Container(
+                key: ValueKey('card_${card.id}'),
+                margin: EdgeInsets.only(
+                  right: i < totalCards - 1 ? cardSpacing : 0,
                   top: (canTap) ? 0 : 18,
-                  child: GestureDetector(
-                    onTap: () => _onCardTap(card),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      decoration: isSelected 
-                          ? BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.amber.withOpacity(0.8),
-                                  blurRadius: 16,
-                                  spreadRadius: 3,
+                ),
+                child: GestureDetector(
+                  onTap: () => _onCardTap(card),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    decoration: isSelected 
+                        ? BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.amber.withOpacity(0.8),
+                                blurRadius: 16,
+                                spreadRadius: 3,
+                              ),
+                            ],
+                          ) 
+                        : null,
+                    child: Opacity(
+                      opacity: canTap ? 1.0 : 0.85,
+                      child: Stack(
+                        children: [
+                          _buildCardWidget(card, big: false),
+                          if (canRespond)
+                            Positioned(
+                              top: -5,
+                              right: -5,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.green,
+                                  shape: BoxShape.circle,
                                 ),
-                              ],
-                            ) 
-                          : null,
-                      child: Opacity(
-                        opacity: canTap ? 1.0 : 0.85,
-                        child: Stack(
-                          children: [
-                            _buildCardWidget(card, big: false),
-                            if (canRespond)
-                              Positioned(
-                                top: -5,
-                                right: -5,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.green,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    card.type == CardType.draw2 ? Icons.reply : Icons.color_lens,
-                                    size: 16, 
-                                    color: Colors.white
-                                  ),
+                                child: Icon(
+                                  card.type == CardType.draw2 ? Icons.reply : Icons.color_lens,
+                                  size: 16, 
+                                  color: Colors.white
                                 ),
                               ),
-                            if (isSelected)
-                              const Positioned(
-                                top: -5,
-                                left: -5,
-                                child: Icon(Icons.check_circle, color: Colors.amber, size: 22),
-                              ),
-                          ],
-                        ),
+                            ),
+                          if (isSelected)
+                            const Positioned(
+                              top: -5,
+                              left: -5,
+                              child: Icon(Icons.check_circle, color: Colors.amber, size: 22),
+                            ),
+                        ],
                       ),
                     ),
                   ),
-                );
-              }),
-            ),
+                ),
+              );
+            }),
           ),
         ),
       ),
@@ -1414,6 +1420,34 @@ class _GameScreenState extends State<GameScreen>
     final isClear = card.type == CardType.clear;
     final bgColor = card.displayColor;
     final txtColor = (card.color == CardColor.yellow) ? Colors.black : Colors.white;
+    
+    String displayText = '';
+    switch (card.type) {
+      case CardType.number:
+        displayText = '${card.number}';
+        break;
+      case CardType.skip:
+        displayText = '⊘';
+        break;
+      case CardType.reverse:
+        displayText = '⟲';
+        break;
+      case CardType.draw2:
+        displayText = '+2';
+        break;
+      case CardType.wild:
+        displayText = 'W';
+        break;
+      case CardType.wildDraw4:
+        displayText = '+4';
+        break;
+      case CardType.wildDraw8:
+        displayText = '+8';
+        break;
+      case CardType.clear:
+        displayText = '🧹';
+        break;
+    }
     
     return Container(
       width: w,
@@ -1446,9 +1480,17 @@ class _GameScreenState extends State<GameScreen>
                 ),
               ),
             ),
+          if (isClear)
+            Center(
+              child: Icon(
+                Icons.cleaning_services,
+                size: big ? 60 : 45,
+                color: Colors.white.withOpacity(0.3),
+              ),
+            ),
           Center(
             child: Text(
-              card.displayText,
+              displayText,
               style: TextStyle(
                 fontSize: big ? 48 : 34,
                 fontWeight: FontWeight.w900,

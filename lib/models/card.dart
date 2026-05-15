@@ -31,7 +31,7 @@ class UnoCard {
       if (type == CardType.number) {
         return topCard.number == number;
       }
-      return true; // skip, reverse, draw2 — одинаковый тип
+      return true;
     }
     return false;
   }
@@ -105,7 +105,7 @@ class UnoDeck {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
     }
-    // 2 карты +8 (уменьшено с 4 до 2)
+    // 2 карты +8
     for (int i = 0; i < 2; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw8));
     }

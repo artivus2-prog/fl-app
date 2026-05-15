@@ -17,22 +17,32 @@ class UnoCard {
   }) : id = '${color.name}_${type.name}_${number ?? ""}_${Random().nextInt(10000)}';
 
   bool canPlayOn(UnoCard topCard, {CardColor? chosenColor}) {
-    // Wild всегда можно
+    // Дикие карты (W, +4, +8) всегда можно сыграть на любую карту
     if (color == CardColor.wild) return true;
+    
     // Clear: можно на свой цвет или на другую clear
     if (type == CardType.clear) {
       return topCard.color == color || topCard.type == CardType.clear;
     }
-    // Совпадение по цвету (включая chosenColor для диких карт)
+    
+    // Совпадение по цвету
     if (topCard.color == color) return true;
-    if (topCard.color == CardColor.wild && chosenColor == color) return true;
-    // Совпадение по типу: одинаковые числа или одинаковые действия
+    
+    // Если верхняя карта - дикая, используем выбранный цвет
+    // Это нужно для случая, когда на +4 кидают +2 (цвет должен совпадать с выбранным)
+    if (topCard.color == CardColor.wild && chosenColor != null && chosenColor == color) {
+      return true;
+    }
+    
+    // Совпадение по типу/числу
     if (topCard.type == type) {
       if (type == CardType.number) {
         return topCard.number == number;
       }
+      // skip, reverse, draw2 - одинаковый тип
       return true;
     }
+    
     return false;
   }
 
@@ -77,7 +87,7 @@ class UnoDeck {
   List<UnoCard> cards = [];
   final Random _random;
 
-  UnoDeck({int? seed}) : _random = Random(seed) {
+  UnoDeck({int? seed}) : _random = Random(seed ?? DateTime.now().millisecondsSinceEpoch) {
     _createDeck();
     shuffle();
   }

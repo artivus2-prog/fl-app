@@ -1089,6 +1089,7 @@ class _GameScreenState extends State<GameScreen>
       _needUnoButton = false;
     });
     _pulseController.stop();
+    
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('✅ УНО!'), 
       backgroundColor: Colors.green, 
@@ -1339,7 +1340,13 @@ class _GameScreenState extends State<GameScreen>
     
     if (!_isMyTurn) return;
 
-    final canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
+    // Для диких карт (+4, +8, W) всегда можно сыграть
+    bool canPlay;
+    if (card.color == CardColor.wild) {
+      canPlay = true;
+    } else {
+      canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
+    }
     
     if (_lastTappedCardId == card.id && canPlay) {
       _lastTapTimer?.cancel(); 

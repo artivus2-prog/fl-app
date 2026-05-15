@@ -808,20 +808,8 @@ class _GameScreenState extends State<GameScreen>
     final hand = _gameState.playerHands[player] ?? [];
     
     for (var card in hand) {
-      if (card.type == CardType.draw2) {
-        if (attackCardType == CardType.draw2) {
-          return true;
-        } else if (attackCardType == CardType.wildDraw4 || attackCardType == CardType.wildDraw8) {
-          if (card.color == chosenColor) return true;
-        }
-      } else if (card.type == CardType.wildDraw4) {
-        if (attackCardType == CardType.wildDraw4 || attackCardType == CardType.wildDraw8) {
-          return true;
-        }
-      } else if (card.type == CardType.wildDraw8) {
-        if (attackCardType == CardType.wildDraw8) {
-          return true;
-        }
+      if (card.canRespondToDraw(chosenColor, attackCardType)) {
+        return true;
       }
     }
     return false;
@@ -830,26 +818,20 @@ class _GameScreenState extends State<GameScreen>
   UnoCard? _getResponseCard(String player, CardColor chosenColor, CardType attackCardType) {
     final hand = _gameState.playerHands[player] ?? [];
     
-    if (attackCardType == CardType.draw2) {
-      for (var card in hand) {
-        if (card.type == CardType.draw2) return card;
+    // Приоритет: +8 > +4 > +2 (самые сильные сначала)
+    for (var card in hand) {
+      if (card.type == CardType.wildDraw8 && card.canRespondToDraw(chosenColor, attackCardType)) {
+        return card;
       }
-    } else if (attackCardType == CardType.wildDraw4) {
-      for (var card in hand) {
-        if (card.type == CardType.wildDraw4) return card;
+    }
+    for (var card in hand) {
+      if (card.type == CardType.wildDraw4 && card.canRespondToDraw(chosenColor, attackCardType)) {
+        return card;
       }
-      for (var card in hand) {
-        if (card.type == CardType.draw2 && card.color == chosenColor) return card;
-      }
-    } else if (attackCardType == CardType.wildDraw8) {
-      for (var card in hand) {
-        if (card.type == CardType.wildDraw8) return card;
-      }
-      for (var card in hand) {
-        if (card.type == CardType.wildDraw4) return card;
-      }
-      for (var card in hand) {
-        if (card.type == CardType.draw2 && card.color == chosenColor) return card;
+    }
+    for (var card in hand) {
+      if (card.type == CardType.draw2 && card.canRespondToDraw(chosenColor, attackCardType)) {
+        return card;
       }
     }
     return null;
@@ -890,34 +872,18 @@ class _GameScreenState extends State<GameScreen>
     _gameState.pendingDrawCount = baseDraw;
     _gameState.pendingAttackCardType = card.type;
     
-    if (_gameState.playerCount == 2) {
-      if (canRespond) {
-        _gameState.pendingResponsePlayer = nextPlayer;
-      } else {
-        final drawCount = _gameState.pendingDrawCount ?? 0;
-        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-        _gameState.pendingResponsePlayer = null;
-        _gameState.pendingDrawCount = 0;
-        _gameState.pendingAttackCardType = null;
-        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-          _gameState.winner = nextPlayer;
-        }
-        _gameState.nextTurn();
-      }
+    if (canRespond && nextHand.length > 1) {
+      _gameState.pendingResponsePlayer = nextPlayer;
     } else {
-      if (canRespond) {
-        _gameState.pendingResponsePlayer = nextPlayer;
-      } else {
-        final drawCount = _gameState.pendingDrawCount ?? 0;
-        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-        _gameState.pendingResponsePlayer = null;
-        _gameState.pendingDrawCount = 0;
-        _gameState.pendingAttackCardType = null;
-        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-          _gameState.winner = nextPlayer;
-        }
-        _gameState.nextTurn();
+      final drawCount = _gameState.pendingDrawCount ?? 0;
+      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+      _gameState.pendingResponsePlayer = null;
+      _gameState.pendingDrawCount = 0;
+      _gameState.pendingAttackCardType = null;
+      if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+        _gameState.winner = nextPlayer;
       }
+      _gameState.nextTurn();
     }
   }
 
@@ -945,6 +911,7 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
+      // Проверяем, не бот ли это - для ботов не показываем диалог!
       if (widget.playerName.startsWith('Бот')) {
         final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
         _onResponseColorChosenForBot(newColor);
@@ -975,38 +942,20 @@ class _GameScreenState extends State<GameScreen>
     final nextPlayer = _gameState.playerOrder[nextIndex];
     final nextHand = _gameState.playerHands[nextPlayer] ?? [];
     
-    if (_gameState.playerCount == 2) {
-      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
-      
-      if (canRespondNext && nextHand.length > 1) {
-        _gameState.pendingResponsePlayer = nextPlayer;
-      } else {
-        final drawCount = _gameState.pendingDrawCount ?? 0;
-        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-        _gameState.pendingResponsePlayer = null;
-        _gameState.pendingDrawCount = 0;
-        _gameState.pendingAttackCardType = null;
-        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-          _gameState.winner = nextPlayer;
-        }
-        _gameState.nextTurn();
-      }
+    final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
+    
+    if (canRespondNext && nextHand.length > 1) {
+      _gameState.pendingResponsePlayer = nextPlayer;
     } else {
-      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
-      
-      if (canRespondNext && nextHand.length > 1) {
-        _gameState.pendingResponsePlayer = nextPlayer;
-      } else {
-        final drawCount = _gameState.pendingDrawCount ?? 0;
-        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-        _gameState.pendingResponsePlayer = null;
-        _gameState.pendingDrawCount = 0;
-        _gameState.pendingAttackCardType = null;
-        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-          _gameState.winner = nextPlayer;
-        }
-        _gameState.nextTurn();
+      final drawCount = _gameState.pendingDrawCount ?? 0;
+      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+      _gameState.pendingResponsePlayer = null;
+      _gameState.pendingDrawCount = 0;
+      _gameState.pendingAttackCardType = null;
+      if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+        _gameState.winner = nextPlayer;
       }
+      _gameState.nextTurn();
     }
     
     _updateTurn();
@@ -1018,6 +967,7 @@ class _GameScreenState extends State<GameScreen>
     if (_choosingResponseColor) return;
     if (!mounted) return;
     
+    // НЕ ПОКАЗЫВАЕМ диалог для ботов!
     if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
@@ -1027,12 +977,6 @@ class _GameScreenState extends State<GameScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _choosingResponseColor && !widget.playerName.startsWith('Бот')) {
         _showResponseColorPicker();
-      } else if (widget.playerName.startsWith('Бот') && _choosingResponseColor) {
-        final botColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
-        _onResponseColorChosenForBot(botColor);
-        setState(() {
-          _choosingResponseColor = false;
-        });
       }
     });
   }
@@ -1041,6 +985,7 @@ class _GameScreenState extends State<GameScreen>
     if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
     if (!mounted) return;
     
+    // НЕ ПОКАЗЫВАЕМ диалог для ботов!
     if (widget.playerName.startsWith('Бот')) return;
     
     _isResponseColorPickerShowing = true;
@@ -1178,38 +1123,20 @@ class _GameScreenState extends State<GameScreen>
     final nextPlayer = _gameState.playerOrder[nextIndex];
     final nextHand = _gameState.playerHands[nextPlayer] ?? [];
     
-    if (_gameState.playerCount == 2) {
-      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
-      
-      if (canRespondNext && nextHand.length > 1) {
-        _gameState.pendingResponsePlayer = nextPlayer;
-      } else {
-        final drawCount = _gameState.pendingDrawCount ?? 0;
-        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-        _gameState.pendingResponsePlayer = null;
-        _gameState.pendingDrawCount = 0;
-        _gameState.pendingAttackCardType = null;
-        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-          _gameState.winner = nextPlayer;
-        }
-        _gameState.nextTurn();
-      }
+    final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
+    
+    if (canRespondNext && nextHand.length > 1) {
+      _gameState.pendingResponsePlayer = nextPlayer;
     } else {
-      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
-      
-      if (canRespondNext && nextHand.length > 1) {
-        _gameState.pendingResponsePlayer = nextPlayer;
-      } else {
-        final drawCount = _gameState.pendingDrawCount ?? 0;
-        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-        _gameState.pendingResponsePlayer = null;
-        _gameState.pendingDrawCount = 0;
-        _gameState.pendingAttackCardType = null;
-        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-          _gameState.winner = nextPlayer;
-        }
-        _gameState.nextTurn();
+      final drawCount = _gameState.pendingDrawCount ?? 0;
+      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+      _gameState.pendingResponsePlayer = null;
+      _gameState.pendingDrawCount = 0;
+      _gameState.pendingAttackCardType = null;
+      if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+        _gameState.winner = nextPlayer;
       }
+      _gameState.nextTurn();
     }
     
     _updateTurn();
@@ -1337,6 +1264,7 @@ class _GameScreenState extends State<GameScreen>
       }
     }
 
+    // Обработка ответа на добор
     if (_gameState.pendingResponsePlayer == botName) {
       if (_gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
         final canRespond = _canRespondToDraw(botName, _gameState.chosenColor!, _gameState.pendingAttackCardType!);
@@ -1351,16 +1279,6 @@ class _GameScreenState extends State<GameScreen>
             
             if (handBefore == 2 && handAfter == 1 && !botUnoPressed) {
               _applyBotUnoPenalty(botName);
-            } else if (handBefore == 2 && handAfter == 1 && botUnoPressed) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('✅ $botName успешно нажал УНО!'),
-                    backgroundColor: Colors.green,
-                    duration: const Duration(milliseconds: 500),
-                  ),
-                );
-              }
             }
             
             final isDraw2 = responseCard.type == CardType.draw2;
@@ -1383,40 +1301,27 @@ class _GameScreenState extends State<GameScreen>
               final newColor = _bot.chooseColor(_gameState.playerHands[botName]!);
               _gameState.chosenColor = newColor;
               
+              _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
+              _gameState.pendingAttackCardType = responseCard.type;
+              
               final nextIndex = _gameState.isClockwise
                   ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
                   : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
               final nextPlayer = _gameState.playerOrder[nextIndex];
               final nextHand = _gameState.playerHands[nextPlayer] ?? [];
               
-              _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
-              _gameState.pendingAttackCardType = responseCard.type;
-              
               final canRespondNext = _canRespondToDraw(nextPlayer, newColor, responseCard.type);
               
-              if (_gameState.playerCount == 2) {
-                if (canRespondNext && nextHand.length > 1) {
-                  _gameState.pendingResponsePlayer = nextPlayer;
-                } else {
-                  final drawCount = _gameState.pendingDrawCount ?? 0;
-                  _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-                  _gameState.pendingResponsePlayer = null;
-                  _gameState.pendingDrawCount = 0;
-                  _gameState.pendingAttackCardType = null;
-                }
-                _gameState.nextTurn();
+              if (canRespondNext && nextHand.length > 1) {
+                _gameState.pendingResponsePlayer = nextPlayer;
               } else {
-                if (canRespondNext && nextHand.length > 1) {
-                  _gameState.pendingResponsePlayer = nextPlayer;
-                } else {
-                  final drawCount = _gameState.pendingDrawCount ?? 0;
-                  _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-                  _gameState.pendingResponsePlayer = null;
-                  _gameState.pendingDrawCount = 0;
-                  _gameState.pendingAttackCardType = null;
-                }
-                _gameState.nextTurn();
+                final drawCount = _gameState.pendingDrawCount ?? 0;
+                _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+                _gameState.pendingResponsePlayer = null;
+                _gameState.pendingDrawCount = 0;
+                _gameState.pendingAttackCardType = null;
               }
+              _gameState.nextTurn();
             }
             
             setState(() => _updateTurn());
@@ -1425,6 +1330,7 @@ class _GameScreenState extends State<GameScreen>
           }
         }
       }
+      // Не может ответить - берёт карты
       final drawCount = _gameState.pendingDrawCount ?? 0;
       _gameState.playerHands[botName]!.addAll(_deck.drawMultiple(drawCount > 0 ? drawCount : 4));
       _gameState.pendingResponsePlayer = null;
@@ -1436,6 +1342,7 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
 
+    // Обычный ход бота
     final chosenCard = _bot.chooseCard(botHand, topCard, chosenColor);
     if (chosenCard == null) {
       _gameState.playerHands[botName]!.add(_deck.draw());
@@ -1454,19 +1361,9 @@ class _GameScreenState extends State<GameScreen>
     
     if (handBefore == 2 && handAfter == 1 && !botUnoPressed) {
       _applyBotUnoPenalty(botName);
-    } else if (handBefore == 2 && handAfter == 1 && botUnoPressed) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ $botName нажал УНО вовремя!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(milliseconds: 500),
-          ),
-        );
-      }
     }
 
-    if (chosenCard.color == CardColor.wild) {
+    if (chosenCard.color == CardColor.wild && chosenCard.type != CardType.wild) {
       _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
     }
 
@@ -1477,7 +1374,7 @@ class _GameScreenState extends State<GameScreen>
       _throwDrawTwo(chosenCard);
       _gameState.nextTurn();
     } else if (chosenCard.type == CardType.wildDraw4 || chosenCard.type == CardType.wildDraw8) {
-      if (_gameState.chosenColor == null && chosenCard.color == CardColor.wild) {
+      if (_gameState.chosenColor == null) {
         _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
       }
       _throwWildDraw(chosenCard);
@@ -1592,19 +1489,7 @@ class _GameScreenState extends State<GameScreen>
     
     bool canRespond = false;
     if (isMyPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
-      final attackType = _gameState.pendingAttackCardType!;
-      
-      if (card.type == CardType.draw2) {
-        if (attackType == CardType.draw2) {
-          canRespond = true;
-        } else if (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8) {
-          canRespond = card.color == _gameState.chosenColor;
-        }
-      } else if (card.type == CardType.wildDraw4) {
-        canRespond = (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8);
-      } else if (card.type == CardType.wildDraw8) {
-        canRespond = (attackType == CardType.wildDraw8);
-      }
+      canRespond = card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
     }
     
     if (canRespond) { 
@@ -1614,13 +1499,7 @@ class _GameScreenState extends State<GameScreen>
     
     if (!_isMyTurn) return;
 
-    bool canPlay;
-    if (card.color == CardColor.wild) {
-      canPlay = true;
-    } else {
-      canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
-    }
-    
+    bool canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
     if (!canPlay) return;
     
     // Двойной тап для быстрого сброса
@@ -1633,7 +1512,7 @@ class _GameScreenState extends State<GameScreen>
           _selectedCardIds.clear();
         });
       }
-      if (card.color == CardColor.wild) {
+      if (card.color == CardColor.wild && card.type != CardType.wild) {
         _showColorPickerForCard(card);
       } else {
         _executePlayCard([card]);
@@ -1647,8 +1526,8 @@ class _GameScreenState extends State<GameScreen>
       _lastTappedCardId = null; 
     });
     
-    // Дикие карты - выбор цвета
-    if (card.color == CardColor.wild) {
+    // Дикие карты кроме W - выбор цвета
+    if (card.color == CardColor.wild && card.type != CardType.wild) {
       _showColorPickerForCard(card);
       return;
     }
@@ -2345,11 +2224,11 @@ class _GameScreenState extends State<GameScreen>
     final chosenColor = _gameState.chosenColor;
     
     if (attackType == CardType.draw2) {
-      responseHint = 'Ответьте ЛЮБЫМ +2';
+      responseHint = 'Ответьте +2, +4, +8 (любые цвета)';
     } else if (attackType == CardType.wildDraw4) {
-      responseHint = 'Ответьте +4 (любой) или +2 цвета ${_colorName(chosenColor!)}';
+      responseHint = 'Ответьте +4, +8 (любые цвета) или +2 цвета ${_colorName(chosenColor!)}';
     } else if (attackType == CardType.wildDraw8) {
-      responseHint = 'Ответьте +8, +4 (любой) или +2 цвета ${_colorName(chosenColor!)}';
+      responseHint = 'Ответьте +8, +4 (любые цвета) или +2 цвета ${_colorName(chosenColor!)}';
     }
     
     return Container(
@@ -2492,25 +2371,12 @@ class _GameScreenState extends State<GameScreen>
           
           bool canRespond = false;
           if (isPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
-            final attackType = _gameState.pendingAttackCardType!;
-            
-            if (card.type == CardType.draw2) {
-              if (attackType == CardType.draw2) {
-                canRespond = true;
-              } else if (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8) {
-                canRespond = card.color == _gameState.chosenColor;
-              }
-            } else if (card.type == CardType.wildDraw4) {
-              canRespond = (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8);
-            } else if (card.type == CardType.wildDraw8) {
-              canRespond = (attackType == CardType.wildDraw8);
-            }
+            canRespond = card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
           }
           
           final isSelected = _selectedCardIds.contains(card.id);
           final canTap = canPlay || canRespond;
           
-          // Подсвечиваем карты, которые можно выбрать для мульти-сброса
           final isMultiSelectable = _multiSelectMode && 
               card.type == CardType.number && 
               card.number == _getSelectedNumber();

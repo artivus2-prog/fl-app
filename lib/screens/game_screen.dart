@@ -945,28 +945,153 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
+      _showResponseColorPickerForCard(card);
+    }
+  }
+
+  void _showResponseColorPickerForCard(UnoCard card) {
+    if (_isResponseColorPickerShowing) return;
+    if (_choosingResponseColor) return;
+    
+    setState(() {
       _choosingResponseColor = true;
-      _isResponseColorPickerShowing = false;
-      
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    });
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _choosingResponseColor) {
+        _showResponseColorPicker();
+      }
+    });
+  }
+
+  void _showResponseColorPicker() {
+    if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
+    if (!mounted) return;
+    
+    _isResponseColorPickerShowing = true;
+    
+    Timer(const Duration(seconds: 10), () {
+      if (_isResponseColorPickerShowing && mounted) {
+        Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
         if (mounted) {
-          _showResponseColorPicker();
+          _cancelResponseColorPick();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Время выбора цвета истекло!'), backgroundColor: Colors.red),
+          );
         }
+      }
+    });
+    
+    showDialog(
+      context: context, 
+      barrierDismissible: false,
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async {
+          _cancelResponseColorPick();
+          return false;
+        },
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.color_lens, color: Colors.orange, size: 32),
+              SizedBox(width: 12),
+              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Вы ответили на +4/+8!\nВыберите следующий цвет:',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildResponseColorOption(CardColor.red, 'Красный', Colors.red, ctx),
+                  _buildResponseColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
+                  _buildResponseColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
+                  _buildResponseColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      if (mounted) {
+        _isResponseColorPickerShowing = false;
+        if (_choosingResponseColor) {
+          _cancelResponseColorPick();
+        }
+      }
+    });
+  }
+
+  Widget _buildResponseColorOption(CardColor color, String label, Color bgColor, BuildContext ctx) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(ctx).pop();
+        _onResponseColorChosen(color);
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: bgColor.withOpacity(0.5),
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _cancelResponseColorPick() {
+    if (mounted) {
+      setState(() {
+        _choosingResponseColor = false;
+        _pendingResponseCard = null;
+        _isResponseColorPickerShowing = false;
       });
     }
   }
-  
+
   void _onResponseColorChosen(CardColor color) {
-    if (_pendingResponseCard == null) return;
+    if (_pendingResponseCard == null) {
+      _cancelResponseColorPick();
+      return;
+    }
     
     debugPrint('Выбран цвет: $color для ответа на +4/+8');
-    
-    _choosingResponseColor = false;
-    _isResponseColorPickerShowing = false;
     
     final card = _pendingResponseCard!;
     final isDraw8 = card.type == CardType.wildDraw8;
     final baseDraw = isDraw8 ? 8 : 4;
+    
+    _choosingResponseColor = false;
+    _isResponseColorPickerShowing = false;
+    _pendingResponseCard = null;
     
     _gameState.chosenColor = color;
     _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
@@ -1012,18 +1137,8 @@ class _GameScreenState extends State<GameScreen>
       }
     }
     
-    _pendingResponseCard = null;
     _updateTurn();
     _broadcastState();
-  }
-
-  void _cancelResponseColorPick() {
-    if (mounted) {
-      setState(() {
-        _choosingResponseColor = false;
-        _pendingResponseCard = null;
-      });
-    }
   }
 
   void _applyClearCardEffect(CardColor color) {
@@ -1349,7 +1464,6 @@ class _GameScreenState extends State<GameScreen>
     
     if (!_isMyTurn) return;
 
-    // Для диких карт (+4, +8, W) всегда можно сыграть
     bool canPlay;
     if (card.color == CardColor.wild) {
       canPlay = true;
@@ -1359,7 +1473,7 @@ class _GameScreenState extends State<GameScreen>
     
     if (!canPlay) return;
     
-    // Обработка двойного тапа для отмены мульти-выбора
+    // Двойной тап для отмены мульти-выбора
     if (_lastTappedCardId == card.id && canPlay) {
       _lastTapTimer?.cancel(); 
       _lastTappedCardId = null;
@@ -1383,13 +1497,13 @@ class _GameScreenState extends State<GameScreen>
       _lastTappedCardId = null; 
     });
     
-    // Для диких карт - сразу показываем выбор цвета
+    // Дикие карты - выбор цвета
     if (card.color == CardColor.wild) {
       _showColorPickerForCard(card);
       return;
     }
     
-    // Для числовых карт - проверяем возможность мульти-сброса
+    // Числовые карты - проверка мульти-сброса
     if (card.type == CardType.number) {
       final multiCards = _getMultiPlayableCards();
       if (multiCards.isNotEmpty) {
@@ -1417,7 +1531,6 @@ class _GameScreenState extends State<GameScreen>
     _executePlayCard([card]);
   }
 
-  // Новый метод для показа выбора цвета с правильной обработкой
   void _showColorPickerForCard(UnoCard card) {
     if (_isColorPickerShowing) return;
     if (_choosingColor) return;
@@ -1427,7 +1540,6 @@ class _GameScreenState extends State<GameScreen>
       _pendingWildCard = card;
     });
     
-    // Небольшая задержка перед показом диалога, чтобы UI обновился
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _choosingColor && _pendingWildCard != null) {
         _showColorPicker();
@@ -1438,7 +1550,6 @@ class _GameScreenState extends State<GameScreen>
   void _showColorPicker() {
     if (!_choosingColor || _isColorPickerShowing) return;
     if (_pendingWildCard == null) {
-      // Сброс состояния, если нет карты
       setState(() {
         _choosingColor = false;
         _isColorPickerShowing = false;
@@ -1453,7 +1564,6 @@ class _GameScreenState extends State<GameScreen>
       barrierDismissible: false,
       builder: (ctx) => WillPopScope(
         onWillPop: () async {
-          // Отмена выбора цвета
           _cancelColorPick();
           return false;
         },
@@ -1489,7 +1599,6 @@ class _GameScreenState extends State<GameScreen>
         ),
       ),
     ).then((_) {
-      // Диалог закрыт (либо выбор сделан, либо отменён)
       if (mounted && _choosingColor) {
         _cancelColorPick();
       }
@@ -1521,75 +1630,6 @@ class _GameScreenState extends State<GameScreen>
     
     _gameState.chosenColor = color;
     _executePlayCard([card]);
-  }
-
-  void _showResponseColorPicker() {
-    if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
-    if (!mounted) return;
-    
-    _isResponseColorPickerShowing = true;
-    
-    Timer(const Duration(seconds: 10), () {
-      if (_isResponseColorPickerShowing && mounted) {
-        Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
-        setState(() {
-          _isResponseColorPickerShowing = false;
-          _choosingResponseColor = false;
-          _pendingResponseCard = null;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Время выбора цвета истекло!'), backgroundColor: Colors.red),
-        );
-      }
-    });
-    
-    showDialog(
-      context: context, 
-      barrierDismissible: false,
-      builder: (ctx) => WillPopScope(
-        onWillPop: () async {
-          _cancelResponseColorPick();
-          return false;
-        },
-        child: AlertDialog(
-          backgroundColor: const Color(0xFF1A1A2E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.color_lens, color: Colors.orange, size: 32),
-              SizedBox(width: 12),
-              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Вы ответили на +4/+8!\nВыберите следующий цвет:',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 14),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx, _onResponseColorChosen),
-                  _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx, _onResponseColorChosen),
-                  _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx, _onResponseColorChosen),
-                  _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx, _onResponseColorChosen),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    ).then((_) {
-      if (mounted && _choosingResponseColor) {
-        _cancelResponseColorPick();
-      }
-      _isResponseColorPickerShowing = false;
-    });
   }
 
   void _confirmMultiPlay() {
@@ -1830,6 +1870,7 @@ class _GameScreenState extends State<GameScreen>
     final myHand = _gameState.currentHand(widget.playerName);
     final isPending = _gameState.pendingResponsePlayer == widget.playerName;
     final canDraw = _isMyTurn || isPending;
+    final multiCards = _getMultiPlayableCards();
 
     return Scaffold(
       backgroundColor: _backgroundColor,
@@ -1842,12 +1883,35 @@ class _GameScreenState extends State<GameScreen>
               Expanded(
                 flex: 3,
                 child: Center(
-                  child: Row(
+                  child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildDeck(canDraw),
-                      const SizedBox(width: 30),
-                      _buildDiscardPile(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildDeck(canDraw),
+                          const SizedBox(width: 30),
+                          _buildDiscardPile(),
+                        ],
+                      ),
+                      // Кнопка подтверждения мульти-сброса
+                      if (_multiSelectMode && _selectedCardIds.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 16),
+                          child: ElevatedButton.icon(
+                            onPressed: _confirmMultiPlay,
+                            icon: const Icon(Icons.send),
+                            label: Text('Сбросить ${_selectedCardIds.length} карт'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1972,6 +2036,18 @@ class _GameScreenState extends State<GameScreen>
                   ),
                 ),
                 const Spacer(),
+                if (_multiSelectMode && _selectedCardIds.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      'Выбрано: ${_selectedCardIds.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
                 if (_gameState.pendingResponsePlayer == widget.playerName)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -1984,7 +2060,7 @@ class _GameScreenState extends State<GameScreen>
                       style: TextStyle(color: Colors.white, fontSize: 12),
                     ),
                   ),
-                if (_isMyTurn && _gameState.pendingResponsePlayer != widget.playerName)
+                if (_isMyTurn && _gameState.pendingResponsePlayer != widget.playerName && !_multiSelectMode)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
@@ -2286,7 +2362,6 @@ class _GameScreenState extends State<GameScreen>
     
     final totalCards = myHand.length;
     const double cardWidth = 85;
-    const double cardHeight = 120;
     
     final screenWidth = MediaQuery.of(context).size.width;
     final availableWidth = screenWidth - 24 - (_isChatOpen ? 320 : 0);

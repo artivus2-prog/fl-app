@@ -945,9 +945,7 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
-      // Проверяем, не бот ли это
       if (widget.playerName.startsWith('Бот')) {
-        // Если бот, выбираем цвет автоматически
         final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
         _onResponseColorChosenForBot(newColor);
       } else {
@@ -1020,7 +1018,6 @@ class _GameScreenState extends State<GameScreen>
     if (_choosingResponseColor) return;
     if (!mounted) return;
     
-    // Не показываем диалог для ботов
     if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
@@ -1031,7 +1028,6 @@ class _GameScreenState extends State<GameScreen>
       if (mounted && _choosingResponseColor && !widget.playerName.startsWith('Бот')) {
         _showResponseColorPicker();
       } else if (widget.playerName.startsWith('Бот') && _choosingResponseColor) {
-        // Если бот - сразу выбираем цвет
         final botColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
         _onResponseColorChosenForBot(botColor);
         setState(() {
@@ -1045,7 +1041,6 @@ class _GameScreenState extends State<GameScreen>
     if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
     if (!mounted) return;
     
-    // Дополнительная проверка - не показываем диалог для ботов
     if (widget.playerName.startsWith('Бот')) return;
     
     _isResponseColorPickerShowing = true;
@@ -1482,7 +1477,6 @@ class _GameScreenState extends State<GameScreen>
       _throwDrawTwo(chosenCard);
       _gameState.nextTurn();
     } else if (chosenCard.type == CardType.wildDraw4 || chosenCard.type == CardType.wildDraw8) {
-      // Убедимся, что выбран цвет до вызова _throwWildDraw
       if (_gameState.chosenColor == null && chosenCard.color == CardColor.wild) {
         _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
       }
@@ -1517,6 +1511,78 @@ class _GameScreenState extends State<GameScreen>
         );
       }
     }
+  }
+
+  // ========== МЕТОДЫ ДЛЯ МУЛЬТИ-СБРОСА ==========
+
+  List<UnoCard> _getSameNumberCards(int number) {
+    if (!_isMyTurn) return [];
+    final hand = _gameState.currentHand(widget.playerName);
+    final topCard = _gameState.topCard;
+    
+    return hand.where((card) => 
+      card.type == CardType.number && 
+      card.number == number && 
+      card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)
+    ).toList();
+  }
+
+  List<UnoCard> _getMultiPlayableCards() {
+    if (!_isMyTurn) return [];
+    final hand = _gameState.currentHand(widget.playerName);
+    final topCard = _gameState.topCard;
+    
+    Map<int, List<UnoCard>> numberGroups = {};
+    
+    for (var card in hand) {
+      if (card.type == CardType.number && card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)) {
+        numberGroups.putIfAbsent(card.number!, () => []);
+        numberGroups[card.number!]!.add(card);
+      }
+    }
+    
+    for (var group in numberGroups.values) {
+      if (group.length >= 2) return group;
+    }
+    return [];
+  }
+
+  int? _getSelectedNumber() {
+    if (_selectedCardIds.isEmpty) return null;
+    final selectedCards = _gameState.currentHand(widget.playerName)
+        .where((c) => _selectedCardIds.contains(c.id))
+        .toList();
+    if (selectedCards.isEmpty) return null;
+    return selectedCards.first.number;
+  }
+
+  void _confirmMultiPlay() {
+    if (_selectedCardIds.isEmpty) return;
+    
+    final cardsToPlay = _gameState.currentHand(widget.playerName)
+        .where((c) => _selectedCardIds.contains(c.id))
+        .toList();
+    
+    if (cardsToPlay.isNotEmpty && cardsToPlay.first.type == CardType.number) {
+      final expectedNumber = cardsToPlay.first.number;
+      final allSameNumber = cardsToPlay.every((c) => c.type == CardType.number && c.number == expectedNumber);
+      
+      if (allSameNumber && cardsToPlay.length >= 2) {
+        cardsToPlay.sort((a, b) => a.color.index.compareTo(b.color.index));
+        
+        setState(() {
+          _multiSelectMode = false;
+          _selectedCardIds.clear();
+        });
+        _executePlayCard(cardsToPlay);
+        return;
+      }
+    }
+    
+    setState(() {
+      _multiSelectMode = false;
+      _selectedCardIds.clear();
+    });
   }
 
   void _onCardTap(UnoCard card) {
@@ -1557,7 +1623,7 @@ class _GameScreenState extends State<GameScreen>
     
     if (!canPlay) return;
     
-    // Двойной тап для отмены мульти-выбора
+    // Двойной тап для быстрого сброса
     if (_lastTappedCardId == card.id && canPlay) {
       _lastTapTimer?.cancel(); 
       _lastTappedCardId = null;
@@ -1589,20 +1655,17 @@ class _GameScreenState extends State<GameScreen>
     
     // Числовые карты - проверка мульти-сброса
     if (card.type == CardType.number) {
-      final multiCards = _getMultiPlayableCards();
-      if (multiCards.isNotEmpty) {
-        final sameNumberCards = multiCards.where((c) => c.number == card.number).toList();
-        if (sameNumberCards.isNotEmpty) {
-          setState(() {
-            _multiSelectMode = true;
-            if (_selectedCardIds.contains(card.id)) {
-              _selectedCardIds.remove(card.id);
-            } else {
-              _selectedCardIds.add(card.id);
-            }
-          });
-          return;
-        }
+      final sameNumberCards = _getSameNumberCards(card.number!);
+      if (sameNumberCards.length >= 2) {
+        setState(() {
+          _multiSelectMode = true;
+          if (_selectedCardIds.contains(card.id)) {
+            _selectedCardIds.remove(card.id);
+          } else {
+            _selectedCardIds.add(card.id);
+          }
+        });
+        return;
       }
     }
     
@@ -1714,57 +1777,6 @@ class _GameScreenState extends State<GameScreen>
     
     _gameState.chosenColor = color;
     _executePlayCard([card]);
-  }
-
-  void _confirmMultiPlay() {
-    if (_selectedCardIds.isEmpty) return;
-    
-    final cardsToPlay = _gameState.currentHand(widget.playerName)
-        .where((c) => _selectedCardIds.contains(c.id))
-        .toList();
-    
-    if (cardsToPlay.isNotEmpty && cardsToPlay.first.type == CardType.number) {
-      final expectedNumber = cardsToPlay.first.number;
-      final allSameNumber = cardsToPlay.every((c) => c.type == CardType.number && c.number == expectedNumber);
-      
-      if (allSameNumber) {
-        setState(() {
-          _multiSelectMode = false;
-          _selectedCardIds.clear();
-        });
-        _executePlayCard(cardsToPlay);
-      } else {
-        setState(() {
-          _multiSelectMode = false;
-          _selectedCardIds.clear();
-        });
-      }
-    } else {
-      setState(() {
-        _multiSelectMode = false;
-        _selectedCardIds.clear();
-      });
-    }
-  }
-
-  List<UnoCard> _getMultiPlayableCards() {
-    if (!_isMyTurn) return [];
-    final hand = _gameState.currentHand(widget.playerName);
-    final topCard = _gameState.topCard;
-    
-    Map<int, List<UnoCard>> numberGroups = {};
-    
-    for (var card in hand) {
-      if (card.type == CardType.number && card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)) {
-        numberGroups.putIfAbsent(card.number!, () => []);
-        numberGroups[card.number!]!.add(card);
-      }
-    }
-    
-    for (var group in numberGroups.values) {
-      if (group.length >= 2) return group;
-    }
-    return [];
   }
 
   void _executePlayCard(List<UnoCard> cards) async {
@@ -1983,9 +1995,9 @@ class _GameScreenState extends State<GameScreen>
                         Padding(
                           padding: const EdgeInsets.only(top: 16),
                           child: ElevatedButton.icon(
-                            onPressed: _confirmMultiPlay,
+                            onPressed: _selectedCardIds.length >= 2 ? _confirmMultiPlay : null,
                             icon: const Icon(Icons.send),
-                            label: Text('Сбросить ${_selectedCardIds.length} карт'),
+                            label: Text('Сбросить ${_selectedCardIds.length} карт (номер ${_getSelectedNumber()})'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               foregroundColor: Colors.white,
@@ -2128,7 +2140,7 @@ class _GameScreenState extends State<GameScreen>
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
-                      'Выбрано: ${_selectedCardIds.length}',
+                      'Сброс: ${_selectedCardIds.length} карт (номер ${_getSelectedNumber()})',
                       style: const TextStyle(color: Colors.white, fontSize: 12),
                     ),
                   ),
@@ -2498,17 +2510,22 @@ class _GameScreenState extends State<GameScreen>
           final isSelected = _selectedCardIds.contains(card.id);
           final canTap = canPlay || canRespond;
           
+          // Подсвечиваем карты, которые можно выбрать для мульти-сброса
+          final isMultiSelectable = _multiSelectMode && 
+              card.type == CardType.number && 
+              card.number == _getSelectedNumber();
+          
           return Container(
             key: ValueKey('card_${card.id}'),
             margin: EdgeInsets.only(
               right: i < totalCards - 1 ? cardSpacing : 0,
-              top: (canTap) ? 0 : 15,
+              top: (canTap || isMultiSelectable) ? 0 : 15,
             ),
             child: AnimatedCard(
               card: card,
               isBig: false,
               isSelected: isSelected,
-              canTap: canTap,
+              canTap: canTap || isMultiSelectable,
               onTap: () => _onCardTap(card),
             ),
           );

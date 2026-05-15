@@ -37,6 +37,7 @@ class _GameScreenState extends State<GameScreen>
   final Set<String> _selectedCardIds = {};
   bool _multiSelectMode = false;
   bool _choosingColor = false;
+  bool _isColorPickerShowing = false;
   UnoCard? _pendingWildCard;
   Timer? _botTimer;
   bool _unoPressed = false;
@@ -49,6 +50,7 @@ class _GameScreenState extends State<GameScreen>
   String? _lastTappedCardId;
   Color _backgroundColor = const Color(0xFF1a2a3a);
   bool _choosingResponseColor = false;
+  bool _isResponseColorPickerShowing = false;
   UnoCard? _pendingResponseCard;
   
   // Чат
@@ -388,6 +390,7 @@ class _GameScreenState extends State<GameScreen>
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
       _choosingResponseColor = true;
+      _isResponseColorPickerShowing = false;
       _showResponseColorPicker();
     }
   }
@@ -396,6 +399,7 @@ class _GameScreenState extends State<GameScreen>
     if (_pendingResponseCard == null) return;
     
     _choosingResponseColor = false;
+    _isResponseColorPickerShowing = false;
     
     final card = _pendingResponseCard!;
     final isDraw8 = card.type == CardType.wildDraw8;
@@ -686,7 +690,9 @@ class _GameScreenState extends State<GameScreen>
       if (_gameState.pendingResponsePlayer == null) _gameState.nextTurn();
     } else {
       _applyCardEffect(chosenCard);
-      _gameState.nextTurn();
+      if (chosenCard.type == CardType.number) {
+        _gameState.nextTurn();
+      }
     }
 
     if (_gameState.playerHands[botName]!.isEmpty) _gameState.winner = botName;
@@ -773,17 +779,23 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     
-    final multiCards = _getMultiPlayableCards();
-    if (multiCards.isNotEmpty && (card.type == CardType.number || card.type == CardType.skip || card.type == CardType.reverse)) {
-      setState(() {
-        _multiSelectMode = true;
-        if (_selectedCardIds.contains(card.id)) {
-          _selectedCardIds.remove(card.id);
-        } else {
-          _selectedCardIds.add(card.id);
+    // Мультисброс ТОЛЬКО для цифровых карт
+    if (card.type == CardType.number) {
+      final multiCards = _getMultiPlayableCards();
+      if (multiCards.isNotEmpty) {
+        final sameNumberCards = multiCards.where((c) => c.number == card.number).toList();
+        if (sameNumberCards.isNotEmpty) {
+          setState(() {
+            _multiSelectMode = true;
+            if (_selectedCardIds.contains(card.id)) {
+              _selectedCardIds.remove(card.id);
+            } else {
+              _selectedCardIds.add(card.id);
+            }
+          });
+          return;
         }
-      });
-      return;
+      }
     }
     
     if (_multiSelectMode) {
@@ -797,23 +809,41 @@ class _GameScreenState extends State<GameScreen>
 
   void _onColorChosen(CardColor color) {
     if (_pendingWildCard == null) return;
-    setState(() { 
-      _choosingColor = false; 
-      _gameState.chosenColor = color; 
-    });
+    _choosingColor = false;
+    _isColorPickerShowing = false;
+    _gameState.chosenColor = color;
     _executePlayCard([_pendingWildCard!]);
   }
 
   void _confirmMultiPlay() {
     if (_selectedCardIds.isEmpty) return;
+    
     final cardsToPlay = _gameState.currentHand(widget.playerName)
         .where((c) => _selectedCardIds.contains(c.id))
         .toList();
-    setState(() {
-      _multiSelectMode = false;
-      _selectedCardIds.clear();
-    });
-    _executePlayCard(cardsToPlay);
+    
+    if (cardsToPlay.isNotEmpty && cardsToPlay.first.type == CardType.number) {
+      final expectedNumber = cardsToPlay.first.number;
+      final allSameNumber = cardsToPlay.every((c) => c.type == CardType.number && c.number == expectedNumber);
+      
+      if (allSameNumber) {
+        setState(() {
+          _multiSelectMode = false;
+          _selectedCardIds.clear();
+        });
+        _executePlayCard(cardsToPlay);
+      } else {
+        setState(() {
+          _multiSelectMode = false;
+          _selectedCardIds.clear();
+        });
+      }
+    } else {
+      setState(() {
+        _multiSelectMode = false;
+        _selectedCardIds.clear();
+      });
+    }
   }
 
   List<UnoCard> _getMultiPlayableCards() {
@@ -821,22 +851,16 @@ class _GameScreenState extends State<GameScreen>
     final hand = _gameState.currentHand(widget.playerName);
     final topCard = _gameState.topCard;
     
-    Map<String, List<UnoCard>> groups = {};
+    Map<int, List<UnoCard>> numberGroups = {};
     
     for (var card in hand) {
-      if (card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)) {
-        String key;
-        if (card.type == CardType.number) {
-          key = 'num_${card.number}';
-        } else {
-          key = 'type_${card.type.name}';
-        }
-        groups.putIfAbsent(key, () => []);
-        groups[key]!.add(card);
+      if (card.type == CardType.number && card.canPlayOn(topCard, chosenColor: _gameState.chosenColor)) {
+        numberGroups.putIfAbsent(card.number!, () => []);
+        numberGroups[card.number!]!.add(card);
       }
     }
     
-    for (var group in groups.values) {
+    for (var group in numberGroups.values) {
       if (group.length >= 2) return group;
     }
     return [];
@@ -844,17 +868,24 @@ class _GameScreenState extends State<GameScreen>
 
   void _executePlayCard(List<UnoCard> cards) {
     if (cards.isEmpty) return;
-    final lastCard = cards.last;
+    
+    final sortedCards = List<UnoCard>.from(cards);
     final handBefore = _gameState.currentHand(widget.playerName).length;
     
-    for (var card in cards) {
+    for (var card in sortedCards) {
       _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == card.id);
     }
+    
+    final lastCard = sortedCards.last;
     _gameState.discardPile.add(lastCard);
+    
+    for (int i = 0; i < sortedCards.length - 1; i++) {
+      _gameState.discardPile.add(sortedCards[i]);
+    }
     
     final handAfter = _gameState.currentHand(widget.playerName).length;
     
-    if (handBefore == 2 && handAfter == 1 && !_unoPressed) {
+    if (handBefore == cards.length + 1 && handAfter == 1 && !_unoPressed) {
       _needUnoButton = true;
       _pulseController.repeat(reverse: true);
       _startUnoTimer();
@@ -868,31 +899,21 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     
-    bool needNextTurn = true;
-    
-    for (var card in cards) {
-      if (card.type == CardType.clear) {
-        _applyClearCardEffect(card.color);
-      } else if (card.type == CardType.draw2) {
-        _throwDrawTwo(card);
-      } else if (card.type == CardType.wildDraw4 || card.type == CardType.wildDraw8) {
-        _throwWildDraw(card);
-        if (_gameState.pendingResponsePlayer != null) {
-          needNextTurn = false;
-        }
-      } else if (card.type == CardType.skip) {
-        needNextTurn = true;
-      } else if (card.type == CardType.reverse) {
-        if (_gameState.playerCount == 2) {
-          needNextTurn = true;
-        } else {
-          _gameState.isClockwise = !_gameState.isClockwise;
-        }
-      }
-    }
-    
-    if (needNextTurn) {
+    // Применяем эффект ПОСЛЕДНЕЙ карты
+    if (lastCard.type == CardType.clear) {
+      _applyClearCardEffect(lastCard.color);
       _gameState.nextTurn();
+    } else if (lastCard.type == CardType.draw2) {
+      _throwDrawTwo(lastCard);
+      _gameState.nextTurn();
+    } else if (lastCard.type == CardType.wildDraw4 || lastCard.type == CardType.wildDraw8) {
+      _throwWildDraw(lastCard);
+      if (_gameState.pendingResponsePlayer == null) _gameState.nextTurn();
+    } else {
+      _applyCardEffect(lastCard);
+      if (lastCard.type == CardType.number) {
+        _gameState.nextTurn();
+      }
     }
     
     _updateTurn();
@@ -959,7 +980,9 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _showColorPicker() {
-    if (!_choosingColor) return;
+    if (!_choosingColor || _isColorPickerShowing) return;
+    _isColorPickerShowing = true;
+    
     showDialog(
       context: context, 
       barrierDismissible: false,
@@ -983,55 +1006,64 @@ class _GameScreenState extends State<GameScreen>
           ]),
         ]),
       ),
-    );
+    ).then((_) {
+      if (_choosingColor && mounted) {
+        setState(() {
+          _choosingColor = false;
+          _isColorPickerShowing = false;
+          _pendingWildCard = null;
+        });
+      } else {
+        _isColorPickerShowing = false;
+      }
+    });
   }
   
   void _showResponseColorPicker() {
-    if (!_choosingResponseColor) return;
+    if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
+    _isResponseColorPickerShowing = true;
     
     showDialog(
       context: context, 
       barrierDismissible: false,
-      builder: (ctx) => WillPopScope(
-        onWillPop: () async {
-          return false;
-        },
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          backgroundColor: const Color(0xFF1A1A2E),
-          title: const Row(children: [
-            Icon(Icons.color_lens, color: Colors.orange, size: 28), 
-            SizedBox(width: 12),
-            Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
-          ]),
-          content: Column(
-            mainAxisSize: MainAxisSize.min, 
-            children: [
-              const Text(
-                'Вы ответили на +4/+8!\nВыберите следующий цвет:', 
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 14)
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
-                children: [
-                  _responseColorButton(CardColor.red, 'Красный', ctx),
-                  _responseColorButton(CardColor.blue, 'Синий', ctx),
-                  _responseColorButton(CardColor.green, 'Зелёный', ctx),
-                  _responseColorButton(CardColor.yellow, 'Жёлтый', ctx),
-                ],
-              ),
-            ],
-          ),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Row(children: [
+          Icon(Icons.color_lens, color: Colors.orange, size: 28), 
+          SizedBox(width: 12),
+          Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min, 
+          children: [
+            const Text(
+              'Вы ответили на +4/+8!\nВыберите следующий цвет:', 
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey, fontSize: 14)
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
+              children: [
+                _responseColorButton(CardColor.red, 'Красный', ctx),
+                _responseColorButton(CardColor.blue, 'Синий', ctx),
+                _responseColorButton(CardColor.green, 'Зелёный', ctx),
+                _responseColorButton(CardColor.yellow, 'Жёлтый', ctx),
+              ],
+            ),
+          ],
         ),
       ),
     ).then((_) {
       if (_choosingResponseColor && mounted) {
         setState(() {
           _choosingResponseColor = false;
+          _isResponseColorPickerShowing = false;
           _pendingResponseCard = null;
         });
+      } else {
+        _isResponseColorPickerShowing = false;
       }
     });
   }
@@ -1102,16 +1134,16 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_choosingResponseColor) {
+    if (_choosingColor && !_isColorPickerShowing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_choosingResponseColor && mounted) {
-          _showResponseColorPicker();
-        }
+        _showColorPicker();
       });
     }
     
-    if (_choosingColor) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showColorPicker());
+    if (_choosingResponseColor && !_isResponseColorPickerShowing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showResponseColorPicker();
+      });
     }
     
     if (!_gameStarted) {
@@ -1138,40 +1170,32 @@ class _GameScreenState extends State<GameScreen>
       backgroundColor: _backgroundColor,
       body: Stack(
         children: [
-          // Основной игровой экран
           Column(
             children: [
-              // Верхние игроки
               _buildTopPlayers(),
               
-              // Центральная область с картами
               Expanded(
                 flex: 3,
                 child: Center(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Колода
                       _buildDeck(canDraw),
                       const SizedBox(width: 30),
-                      // Верхняя карта сброса
                       _buildDiscardPile(),
                     ],
                   ),
                 ),
               ),
               
-              // Информация о ходе и кнопка УНО
               if (_needUnoButton) _buildUnoButton(),
               if (isPending && _gameState.pendingDrawCount != null)
                 _buildChainInfo(),
               
-              // Нижние игроки (свои карты)
               _buildBottomPlayers(),
             ],
           ),
           
-          // Чат (плавающий справа)
           _buildChatPanel(),
         ],
       ),

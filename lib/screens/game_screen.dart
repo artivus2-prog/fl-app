@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/card.dart';
@@ -52,10 +50,6 @@ class _GameScreenState extends State<GameScreen>
   Color _backgroundColor = const Color(0xFF0A0A1A);
   bool _choosingResponseColor = false;
   UnoCard? _pendingResponseCard;
-  
-  // Для фонового изображения
-  bool _useImageBackground = false;
-  ui.Image? _backgroundImage;
 
   bool get _isBotTurn => _gameState.currentPlayer.startsWith('Бот');
   bool get _noPlayableCards {
@@ -82,31 +76,7 @@ class _GameScreenState extends State<GameScreen>
   Future<void> _loadBackground() async {
     setState(() {
       _backgroundColor = SettingsScreenState.backgroundColor;
-      _useImageBackground = SettingsScreenState.backgroundType == BackgroundType.image;
     });
-    
-    if (_useImageBackground) {
-      final bytes = SettingsScreenState.backgroundImage;
-      if (bytes != null) {
-        await _loadBackgroundImage(bytes);
-      }
-    }
-  }
-
-  Future<void> _loadBackgroundImage(Uint8List bytes) async {
-    try {
-      final Completer<ui.Image> completer = Completer();
-      ui.decodeImageFromList(bytes, (ui.Image image) {
-        completer.complete(image);
-      });
-      _backgroundImage = await completer.future;
-      setState(() {});
-    } catch (e) {
-      debugPrint('Ошибка загрузки фонового изображения: $e');
-      setState(() {
-        _useImageBackground = false;
-      });
-    }
   }
 
   @override
@@ -956,50 +926,39 @@ class _GameScreenState extends State<GameScreen>
 
     return Scaffold(
       backgroundColor: _backgroundColor,
-      body: Stack(
+      body: Column(
         children: [
-          if (_useImageBackground && _backgroundImage != null)
-            Positioned.fill(
-              child: RawImage(
-                image: _backgroundImage,
-                fit: BoxFit.cover,
+          _buildAppBar(isPending),
+          if (_needUnoButton) _buildUnoButton(),
+          if (isPending && _gameState.pendingDrawCount != null)
+            _buildChainInfo(),
+          _buildTopCards(canDraw),
+          _buildPlayerBar(),
+          if (_multiSelectMode) 
+            _buildHint('Нажмите на карты чтобы выбрать для сброса', Colors.amber, Icons.touch_app),
+          if (isPending) 
+            _buildPendingHint(),
+          if (_noPlayableCards && !isPending) 
+            _buildHint('Нет доступных карт — нажмите на колоду', Colors.yellow, Icons.touch_app),
+          const SizedBox(height: 4),
+          if (_multiSelectMode && _selectedCardIds.length >= 2)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _confirmMultiPlay,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber, 
+                    foregroundColor: Colors.black, 
+                    padding: const EdgeInsets.symmetric(vertical: 14)
+                  ),
+                  child: const Text('Сбросить выбранные карты', 
+                      style: TextStyle(fontWeight: FontWeight.bold))
+                ),
               ),
             ),
-          Column(
-            children: [
-              _buildAppBar(isPending),
-              if (_needUnoButton) _buildUnoButton(),
-              if (isPending && _gameState.pendingDrawCount != null)
-                _buildChainInfo(),
-              _buildTopCards(canDraw),
-              _buildPlayerBar(),
-              if (_multiSelectMode) 
-                _buildHint('Нажмите на карты чтобы выбрать для сброса', Colors.amber, Icons.touch_app),
-              if (isPending) 
-                _buildPendingHint(),
-              if (_noPlayableCards && !isPending) 
-                _buildHint('Нет доступных карт — нажмите на колоду', Colors.yellow, Icons.touch_app),
-              const SizedBox(height: 4),
-              if (_multiSelectMode && _selectedCardIds.length >= 2)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _confirmMultiPlay,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.amber, 
-                        foregroundColor: Colors.black, 
-                        padding: const EdgeInsets.symmetric(vertical: 14)
-                      ),
-                      child: const Text('Сбросить выбранные карты', 
-                          style: TextStyle(fontWeight: FontWeight.bold))
-                    ),
-                  ),
-                ),
-              _buildPlayerHand(myHand, isPending),
-            ],
-          ),
+          _buildPlayerHand(myHand, isPending),
         ],
       ),
     );

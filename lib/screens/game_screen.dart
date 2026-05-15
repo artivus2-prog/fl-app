@@ -594,7 +594,7 @@ class _GameScreenState extends State<GameScreen>
   late AnimationController _pulseController;
   Timer? _lastTapTimer;
   String? _lastTappedCardId;
-  Color _backgroundColor = const Color(0xFF1a2a3a);
+  Color _backgroundColor = const Color(0xFF1B5E20);
   bool _choosingResponseColor = false;
   bool _isResponseColorPickerShowing = false;
   UnoCard? _pendingResponseCard;
@@ -620,7 +620,7 @@ class _GameScreenState extends State<GameScreen>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    _deck = UnoDeck(seed: 42);
+    _deck = UnoDeck(seed: DateTime.now().millisecondsSinceEpoch);
     _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 1));
     widget.server.onMessage = (GameMessage message) => _handleMessage(message);
     if (widget.isHost) _startGameAsHost();
@@ -693,12 +693,16 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _startGameAsHost() {
+    _deck = UnoDeck(seed: DateTime.now().millisecondsSinceEpoch);
+    
     Map<String, List<UnoCard>> hands = {};
     for (var player in widget.players) {
       hands[player] = _deck.drawMultiple(7);
     }
     UnoCard firstCard;
-    do { firstCard = _deck.draw(); } while (firstCard.type != CardType.number);
+    do { 
+      firstCard = _deck.draw(); 
+    } while (firstCard.type != CardType.number);
     _gameState = UnoGameState(
       drawPileCount: _deck.cards.length,
       discardPile: [firstCard],
@@ -800,8 +804,6 @@ class _GameScreenState extends State<GameScreen>
     }
   }
 
-  // ========== ПРОВЕРКА ОТВЕТА НА +2/+4/+8 ==========
-  
   bool _canRespondToDraw(String player, CardColor chosenColor, CardType attackCardType) {
     final hand = _gameState.playerHands[player] ?? [];
     
@@ -853,8 +855,6 @@ class _GameScreenState extends State<GameScreen>
     return null;
   }
 
-  // ========== ЦЕПОЧКИ ОТВЕТОВ ==========
-  
   void _throwDrawTwo(UnoCard card) {
     _gameState.nextTurn();
     final nextPlayer = _gameState.currentPlayer;
@@ -890,16 +890,33 @@ class _GameScreenState extends State<GameScreen>
     _gameState.pendingDrawCount = baseDraw;
     _gameState.pendingAttackCardType = card.type;
     
-    if (canRespond) {
-      _gameState.pendingResponsePlayer = nextPlayer;
+    if (_gameState.playerCount == 2) {
+      if (canRespond) {
+        _gameState.pendingResponsePlayer = nextPlayer;
+      } else {
+        final drawCount = _gameState.pendingDrawCount ?? 0;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+        _gameState.pendingResponsePlayer = null;
+        _gameState.pendingDrawCount = 0;
+        _gameState.pendingAttackCardType = null;
+        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+          _gameState.winner = nextPlayer;
+        }
+        _gameState.nextTurn();
+      }
     } else {
-      final drawCount = _gameState.pendingDrawCount ?? 0;
-      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-      _gameState.pendingResponsePlayer = null;
-      _gameState.pendingDrawCount = 0;
-      _gameState.pendingAttackCardType = null;
-      if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-        _gameState.winner = nextPlayer;
+      if (canRespond) {
+        _gameState.pendingResponsePlayer = nextPlayer;
+      } else {
+        final drawCount = _gameState.pendingDrawCount ?? 0;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+        _gameState.pendingResponsePlayer = null;
+        _gameState.pendingDrawCount = 0;
+        _gameState.pendingAttackCardType = null;
+        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+          _gameState.winner = nextPlayer;
+        }
+        _gameState.nextTurn();
       }
     }
   }
@@ -942,6 +959,8 @@ class _GameScreenState extends State<GameScreen>
   void _onResponseColorChosen(CardColor color) {
     if (_pendingResponseCard == null) return;
     
+    debugPrint('Выбран цвет: $color для ответа на +4/+8');
+    
     _choosingResponseColor = false;
     _isResponseColorPickerShowing = false;
     
@@ -950,6 +969,8 @@ class _GameScreenState extends State<GameScreen>
     final baseDraw = isDraw8 ? 8 : 4;
     
     _gameState.chosenColor = color;
+    _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
+    _gameState.pendingAttackCardType = card.type;
     
     final nextIndex = _gameState.isClockwise
         ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
@@ -957,31 +978,44 @@ class _GameScreenState extends State<GameScreen>
     final nextPlayer = _gameState.playerOrder[nextIndex];
     final nextHand = _gameState.playerHands[nextPlayer] ?? [];
     
-    _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
-    _gameState.pendingAttackCardType = card.type;
-    
-    final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
-    
-    if (canRespondNext && nextHand.length > 1) {
-      _gameState.pendingResponsePlayer = nextPlayer;
+    if (_gameState.playerCount == 2) {
+      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
+      
+      if (canRespondNext && nextHand.length > 1) {
+        _gameState.pendingResponsePlayer = nextPlayer;
+      } else {
+        final drawCount = _gameState.pendingDrawCount ?? 0;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+        _gameState.pendingResponsePlayer = null;
+        _gameState.pendingDrawCount = 0;
+        _gameState.pendingAttackCardType = null;
+        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+          _gameState.winner = nextPlayer;
+        }
+        _gameState.nextTurn();
+      }
     } else {
-      final drawCount = _gameState.pendingDrawCount ?? 0;
-      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-      _gameState.pendingResponsePlayer = null;
-      _gameState.pendingDrawCount = 0;
-      _gameState.pendingAttackCardType = null;
-      if (_gameState.playerHands[nextPlayer]!.isEmpty) {
-        _gameState.winner = nextPlayer;
+      final canRespondNext = _canRespondToDraw(nextPlayer, color, card.type);
+      
+      if (canRespondNext && nextHand.length > 1) {
+        _gameState.pendingResponsePlayer = nextPlayer;
+      } else {
+        final drawCount = _gameState.pendingDrawCount ?? 0;
+        _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+        _gameState.pendingResponsePlayer = null;
+        _gameState.pendingDrawCount = 0;
+        _gameState.pendingAttackCardType = null;
+        if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+          _gameState.winner = nextPlayer;
+        }
+        _gameState.nextTurn();
       }
     }
-    _gameState.nextTurn();
-    _pendingResponseCard = null;
     
+    _pendingResponseCard = null;
     _updateTurn();
     _broadcastState();
   }
-
-  // ========== ОСТАЛЬНАЯ ЛОГИКА ==========
 
   void _applyClearCardEffect(CardColor color) {
     final currentPlayer = _gameState.currentPlayer;
@@ -1160,16 +1194,29 @@ class _GameScreenState extends State<GameScreen>
               
               final canRespondNext = _canRespondToDraw(nextPlayer, newColor, responseCard.type);
               
-              if (canRespondNext && nextHand.length > 1) {
-                _gameState.pendingResponsePlayer = nextPlayer;
+              if (_gameState.playerCount == 2) {
+                if (canRespondNext && nextHand.length > 1) {
+                  _gameState.pendingResponsePlayer = nextPlayer;
+                } else {
+                  final drawCount = _gameState.pendingDrawCount ?? 0;
+                  _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+                  _gameState.pendingResponsePlayer = null;
+                  _gameState.pendingDrawCount = 0;
+                  _gameState.pendingAttackCardType = null;
+                }
+                _gameState.nextTurn();
               } else {
-                final drawCount = _gameState.pendingDrawCount ?? 0;
-                _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-                _gameState.pendingResponsePlayer = null;
-                _gameState.pendingDrawCount = 0;
-                _gameState.pendingAttackCardType = null;
+                if (canRespondNext && nextHand.length > 1) {
+                  _gameState.pendingResponsePlayer = nextPlayer;
+                } else {
+                  final drawCount = _gameState.pendingDrawCount ?? 0;
+                  _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
+                  _gameState.pendingResponsePlayer = null;
+                  _gameState.pendingDrawCount = 0;
+                  _gameState.pendingAttackCardType = null;
+                }
+                _gameState.nextTurn();
               }
-              _gameState.nextTurn();
             }
             
             setState(() => _updateTurn());
@@ -1587,6 +1634,7 @@ class _GameScreenState extends State<GameScreen>
     
     Timer(const Duration(seconds: 10), () {
       if (_isResponseColorPickerShowing && mounted) {
+        Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
         setState(() {
           _isResponseColorPickerShowing = false;
           _choosingResponseColor = false;
@@ -1601,36 +1649,39 @@ class _GameScreenState extends State<GameScreen>
     showDialog(
       context: context, 
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.color_lens, color: Colors.orange, size: 32),
-            SizedBox(width: 12),
-            Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Вы ответили на +4/+8!\nВыберите следующий цвет:',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx),
-                _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
-                _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
-                _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
-              ],
-            ),
-          ],
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.color_lens, color: Colors.orange, size: 32),
+              SizedBox(width: 12),
+              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Вы ответили на +4/+8!\nВыберите следующий цвет:',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx),
+                  _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
+                  _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
+                  _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     ).then((_) {
@@ -1650,9 +1701,9 @@ class _GameScreenState extends State<GameScreen>
     return GestureDetector(
       onTap: () {
         Navigator.of(ctx).pop();
-        if (color == CardColor.red || color == CardColor.blue || color == CardColor.green || color == CardColor.yellow) {
+        if (_choosingColor) {
           _onColorChosen(color);
-        } else {
+        } else if (_choosingResponseColor) {
           _onResponseColorChosen(color);
         }
       },

@@ -78,7 +78,6 @@ class _GameScreenState extends State<GameScreen>
     if (widget.isHost) _startGameAsHost();
     _loadBackground();
     
-    // Добавляем приветственное сообщение в чат
     _chatMessages.add(ChatMessage(
       playerName: 'Система',
       message: 'Добро пожаловать в игру!',
@@ -98,7 +97,6 @@ class _GameScreenState extends State<GameScreen>
     final message = _chatController.text.trim();
     _chatController.clear();
     
-    // Отправляем сообщение через сервер
     widget.server.broadcastAll(GameMessage(
       type: GameMessageType.chat,
       data: {
@@ -396,6 +394,7 @@ class _GameScreenState extends State<GameScreen>
   
   void _onResponseColorChosen(CardColor color) {
     if (_pendingResponseCard == null) return;
+    
     _choosingResponseColor = false;
     
     final card = _pendingResponseCard!;
@@ -968,13 +967,13 @@ class _GameScreenState extends State<GameScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: const Color(0xFF1A1A2E),
         title: const Row(children: [
-          Icon(Icons.palette, color: Colors.purple), 
+          Icon(Icons.color_lens, color: Colors.purple, size: 28), 
           SizedBox(width: 12),
-          Text('Выберите цвет', style: TextStyle(color: Colors.white))
+          Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
         ]),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           const Text('Дикая карта — выберите следующий цвет:', 
-              style: TextStyle(color: Colors.grey)),
+              style: TextStyle(color: Colors.grey, fontSize: 14)),
           const SizedBox(height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
             _colorButton(CardColor.red, 'Красный', ctx),
@@ -989,30 +988,52 @@ class _GameScreenState extends State<GameScreen>
   
   void _showResponseColorPicker() {
     if (!_choosingResponseColor) return;
+    
     showDialog(
       context: context, 
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Row(children: [
-          Icon(Icons.palette, color: Colors.orange), 
-          SizedBox(width: 12),
-          Text('Выберите цвет для ответа', style: TextStyle(color: Colors.white))
-        ]),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Вы ответили на +4/+8! Выберите следующий цвет:', 
-              style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 20),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _responseColorButton(CardColor.red, 'Красный', ctx),
-            _responseColorButton(CardColor.blue, 'Синий', ctx),
-            _responseColorButton(CardColor.green, 'Зелёный', ctx),
-            _responseColorButton(CardColor.yellow, 'Жёлтый', ctx),
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async {
+          return false;
+        },
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Row(children: [
+            Icon(Icons.color_lens, color: Colors.orange, size: 28), 
+            SizedBox(width: 12),
+            Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
           ]),
-        ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min, 
+            children: [
+              const Text(
+                'Вы ответили на +4/+8!\nВыберите следующий цвет:', 
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 14)
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
+                children: [
+                  _responseColorButton(CardColor.red, 'Красный', ctx),
+                  _responseColorButton(CardColor.blue, 'Синий', ctx),
+                  _responseColorButton(CardColor.green, 'Зелёный', ctx),
+                  _responseColorButton(CardColor.yellow, 'Жёлтый', ctx),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
-    );
+    ).then((_) {
+      if (_choosingResponseColor && mounted) {
+        setState(() {
+          _choosingResponseColor = false;
+          _pendingResponseCard = null;
+        });
+      }
+    });
   }
 
   Widget _colorButton(CardColor color, String label, BuildContext ctx) {
@@ -1026,13 +1047,13 @@ class _GameScreenState extends State<GameScreen>
     }
     return GestureDetector(
       onTap: () { 
-        Navigator.pop(ctx); 
+        Navigator.of(ctx).pop(); 
         _onColorChosen(color); 
       },
       child: Column(children: [
         Container(
-          width: 50, 
-          height: 50, 
+          width: 60, 
+          height: 60, 
           decoration: BoxDecoration(
             color: c, 
             shape: BoxShape.circle, 
@@ -1040,8 +1061,8 @@ class _GameScreenState extends State<GameScreen>
             boxShadow: [BoxShadow(color: c.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)]
           ),
         ),
-        const SizedBox(height: 6),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
       ]),
     );
   }
@@ -1057,13 +1078,13 @@ class _GameScreenState extends State<GameScreen>
     }
     return GestureDetector(
       onTap: () { 
-        Navigator.pop(ctx); 
+        Navigator.of(ctx).pop(); 
         _onResponseColorChosen(color); 
       },
       child: Column(children: [
         Container(
-          width: 50, 
-          height: 50, 
+          width: 60, 
+          height: 60, 
           decoration: BoxDecoration(
             color: c, 
             shape: BoxShape.circle, 
@@ -1071,8 +1092,8 @@ class _GameScreenState extends State<GameScreen>
             boxShadow: [BoxShadow(color: c.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)]
           ),
         ),
-        const SizedBox(height: 6),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
       ]),
     );
   }
@@ -1081,8 +1102,18 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_choosingColor) WidgetsBinding.instance.addPostFrameCallback((_) => _showColorPicker());
-    if (_choosingResponseColor) WidgetsBinding.instance.addPostFrameCallback((_) => _showResponseColorPicker());
+    if (_choosingResponseColor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_choosingResponseColor && mounted) {
+          _showResponseColorPicker();
+        }
+      });
+    }
+    
+    if (_choosingColor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showColorPicker());
+    }
+    
     if (!_gameStarted) {
       return Scaffold(
         backgroundColor: _backgroundColor,
@@ -1148,7 +1179,6 @@ class _GameScreenState extends State<GameScreen>
   }
   
   Widget _buildTopPlayers() {
-    // Показываем всех игроков кроме текущего (который снизу)
     final topPlayers = widget.players.where((p) => p != widget.playerName).toList();
     
     return Container(
@@ -1174,7 +1204,6 @@ class _GameScreenState extends State<GameScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Аватар
                 Container(
                   width: 40,
                   height: 40,
@@ -1219,7 +1248,6 @@ class _GameScreenState extends State<GameScreen>
   Widget _buildBottomPlayers() {
     final myHand = _gameState.currentHand(widget.playerName);
     final isPending = _gameState.pendingResponsePlayer == widget.playerName;
-    final isMyTurn = _isMyTurn;
     
     return Container(
       height: 160,
@@ -1232,7 +1260,6 @@ class _GameScreenState extends State<GameScreen>
       ),
       child: Column(
         children: [
-          // Строка с информацией о игроке
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Row(
@@ -1268,7 +1295,7 @@ class _GameScreenState extends State<GameScreen>
                       style: TextStyle(color: Colors.white, fontSize: 12),
                     ),
                   ),
-                if (isMyTurn && _gameState.pendingResponsePlayer != widget.playerName)
+                if (_isMyTurn && _gameState.pendingResponsePlayer != widget.playerName)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
@@ -1283,7 +1310,6 @@ class _GameScreenState extends State<GameScreen>
               ],
             ),
           ),
-          // Карты в руке
           Expanded(
             child: _buildPlayerHand(myHand, isPending),
           ),
@@ -1405,7 +1431,6 @@ class _GameScreenState extends State<GameScreen>
         ),
         child: Column(
           children: [
-            // Заголовок чата
             Container(
               padding: const EdgeInsets.all(12),
               decoration: const BoxDecoration(
@@ -1434,7 +1459,6 @@ class _GameScreenState extends State<GameScreen>
                 ],
               ),
             ),
-            // Сообщения
             Expanded(
               child: ListView.builder(
                 controller: _chatScrollController,
@@ -1446,7 +1470,6 @@ class _GameScreenState extends State<GameScreen>
                 },
               ),
             ),
-            // Поле ввода
             Container(
               padding: const EdgeInsets.all(8),
               decoration: const BoxDecoration(
@@ -1561,22 +1584,6 @@ class _GameScreenState extends State<GameScreen>
       ),
     );
   }
-  
-  Widget _buildPendingHint() {
-    String hint = '';
-    final attackType = _gameState.pendingAttackCardType;
-    final chosenColor = _gameState.chosenColor;
-    
-    if (attackType == CardType.draw2) {
-      hint = 'Ответьте ЛЮБЫМ +2 или нажмите колоду чтобы взять ${_gameState.pendingDrawCount ?? 0} карт';
-    } else if (attackType == CardType.wildDraw4) {
-      hint = 'Ответьте +4 (любой) или +2 цвета ${_colorName(chosenColor!)} или нажмите колоду чтобы взять ${_gameState.pendingDrawCount ?? 0} карт';
-    } else if (attackType == CardType.wildDraw8) {
-      hint = 'Ответьте +8, +4 (любой) или +2 цвета ${_colorName(chosenColor!)} или нажмите колоду чтобы взять ${_gameState.pendingDrawCount ?? 0} карт';
-    }
-    
-    return _buildHint(hint, Colors.orange, Icons.warning);
-  }
 
   Widget _buildUnoButton() {
     return AnimatedBuilder(
@@ -1638,21 +1645,6 @@ class _GameScreenState extends State<GameScreen>
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHint(String text, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(8), 
-      color: color.withOpacity(0.2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center, 
-        children: [
-          Icon(icon, size: 18, color: color), 
-          const SizedBox(width: 8),
-          Text(text, style: TextStyle(color: color, fontSize: 13)),
-        ]
       ),
     );
   }

@@ -375,6 +375,7 @@ class _GameScreenState extends State<GameScreen>
     final attackType = _gameState.pendingAttackCardType;
     
     if (isDraw2) {
+      // +2 НЕ меняет цвет, просто завершаем цепочку
       final prevIndex = _gameState.isClockwise
           ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
           : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
@@ -388,15 +389,23 @@ class _GameScreenState extends State<GameScreen>
       _updateTurn();
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
+      // +4 и +8 меняют цвет - нужен выбор цвета
       _pendingResponseCard = card;
       _choosingResponseColor = true;
       _isResponseColorPickerShowing = false;
-      _showResponseColorPicker();
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showResponseColorPicker();
+        }
+      });
     }
   }
   
   void _onResponseColorChosen(CardColor color) {
     if (_pendingResponseCard == null) return;
+    
+    debugPrint('Выбран цвет: $color для ответа на +4/+8');
     
     _choosingResponseColor = false;
     _isResponseColorPickerShowing = false;
@@ -999,10 +1008,10 @@ class _GameScreenState extends State<GameScreen>
               style: TextStyle(color: Colors.grey, fontSize: 14)),
           const SizedBox(height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _colorButton(CardColor.red, 'Красный', ctx),
-            _colorButton(CardColor.blue, 'Синий', ctx),
-            _colorButton(CardColor.green, 'Зелёный', ctx),
-            _colorButton(CardColor.yellow, 'Жёлтый', ctx),
+            _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx),
+            _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
+            _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
+            _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
           ]),
         ]),
       ),
@@ -1021,42 +1030,62 @@ class _GameScreenState extends State<GameScreen>
   
   void _showResponseColorPicker() {
     if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
+    if (!mounted) return;
+    
     _isResponseColorPickerShowing = true;
+    
+    // Таймаут 10 секунд
+    Timer(const Duration(seconds: 10), () {
+      if (_isResponseColorPickerShowing && mounted) {
+        debugPrint('⚠️ Таймаут выбора цвета');
+        setState(() {
+          _isResponseColorPickerShowing = false;
+          _choosingResponseColor = false;
+          _pendingResponseCard = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Время выбора цвета истекло!'), backgroundColor: Colors.red),
+        );
+      }
+    });
     
     showDialog(
       context: context, 
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: const Color(0xFF1A1A2E),
-        title: const Row(children: [
-          Icon(Icons.color_lens, color: Colors.orange, size: 28), 
-          SizedBox(width: 12),
-          Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
-        ]),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.color_lens, color: Colors.orange, size: 32),
+            SizedBox(width: 12),
+            Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
+          ],
+        ),
         content: Column(
-          mainAxisSize: MainAxisSize.min, 
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Вы ответили на +4/+8!\nВыберите следующий цвет:', 
+              'Вы ответили на +4/+8!\nВыберите следующий цвет:',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: 14)
+              style: TextStyle(color: Colors.grey, fontSize: 14),
             ),
             const SizedBox(height: 20),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _responseColorButton(CardColor.red, 'Красный', ctx),
-                _responseColorButton(CardColor.blue, 'Синий', ctx),
-                _responseColorButton(CardColor.green, 'Зелёный', ctx),
-                _responseColorButton(CardColor.yellow, 'Жёлтый', ctx),
+                _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx),
+                _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
+                _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
+                _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
               ],
             ),
           ],
         ),
       ),
     ).then((_) {
-      if (_choosingResponseColor && mounted) {
+      if (mounted && _choosingResponseColor) {
         setState(() {
           _choosingResponseColor = false;
           _isResponseColorPickerShowing = false;
@@ -1068,65 +1097,41 @@ class _GameScreenState extends State<GameScreen>
     });
   }
 
-  Widget _colorButton(CardColor color, String label, BuildContext ctx) {
-    Color c;
-    switch (color) { 
-      case CardColor.red: c = Colors.red; break; 
-      case CardColor.blue: c = Colors.blue; break; 
-      case CardColor.green: c = Colors.green; break; 
-      case CardColor.yellow: c = Colors.amber; break; 
-      default: c = Colors.grey; 
-    }
+  Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildContext ctx) {
     return GestureDetector(
-      onTap: () { 
-        Navigator.of(ctx).pop(); 
-        _onColorChosen(color); 
+      onTap: () {
+        Navigator.of(ctx).pop();
+        if (color == CardColor.red || color == CardColor.blue || color == CardColor.green || color == CardColor.yellow) {
+          _onColorChosen(color);
+        } else {
+          _onResponseColorChosen(color);
+        }
       },
-      child: Column(children: [
-        Container(
-          width: 60, 
-          height: 60, 
-          decoration: BoxDecoration(
-            color: c, 
-            shape: BoxShape.circle, 
-            border: Border.all(color: Colors.white, width: 3), 
-            boxShadow: [BoxShadow(color: c.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)]
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: bgColor.withOpacity(0.5),
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-      ]),
-    );
-  }
-  
-  Widget _responseColorButton(CardColor color, String label, BuildContext ctx) {
-    Color c;
-    switch (color) { 
-      case CardColor.red: c = Colors.red; break; 
-      case CardColor.blue: c = Colors.blue; break; 
-      case CardColor.green: c = Colors.green; break; 
-      case CardColor.yellow: c = Colors.amber; break; 
-      default: c = Colors.grey; 
-    }
-    return GestureDetector(
-      onTap: () { 
-        Navigator.of(ctx).pop(); 
-        _onResponseColorChosen(color); 
-      },
-      child: Column(children: [
-        Container(
-          width: 60, 
-          height: 60, 
-          decoration: BoxDecoration(
-            color: c, 
-            shape: BoxShape.circle, 
-            border: Border.all(color: Colors.white, width: 3), 
-            boxShadow: [BoxShadow(color: c.withOpacity(0.6), blurRadius: 10, spreadRadius: 2)]
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-      ]),
+        ],
+      ),
     );
   }
 
@@ -1134,18 +1139,6 @@ class _GameScreenState extends State<GameScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_choosingColor && !_isColorPickerShowing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showColorPicker();
-      });
-    }
-    
-    if (_choosingResponseColor && !_isResponseColorPickerShowing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showResponseColorPicker();
-      });
-    }
-    
     if (!_gameStarted) {
       return Scaffold(
         backgroundColor: _backgroundColor,

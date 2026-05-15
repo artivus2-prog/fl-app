@@ -105,8 +105,8 @@ class UnoDeck {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wild));
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw4));
     }
-    // 4 карты +8
-    for (int i = 0; i < 4; i++) {
+    // 2 карты +8 (уменьшено с 4 до 2)
+    for (int i = 0; i < 2; i++) {
       cards.add(UnoCard(color: CardColor.wild, type: CardType.wildDraw8));
     }
   }

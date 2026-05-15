@@ -11,6 +11,7 @@ class UnoGameState {
   CardColor? chosenColor; // Цвет, выбранный при +4
   String? pendingResponsePlayer; // Кто должен ответить на +4
   int? pendingDrawCount; // Сколько карт брать если не ответит
+  CardType? pendingAttackCardType; // Тип карты, которой атаковали (+2/+4/+8)
 
   UnoGameState({
     required this.drawPileCount,
@@ -23,6 +24,7 @@ class UnoGameState {
     this.chosenColor,
     this.pendingResponsePlayer,
     this.pendingDrawCount,
+    this.pendingAttackCardType,
   });
 
   UnoCard get topCard => discardPile.last;
@@ -51,6 +53,7 @@ class UnoGameState {
     'chosenColor': chosenColor?.name,
     'pendingResponsePlayer': pendingResponsePlayer,
     'pendingDrawCount': pendingDrawCount,
+    'pendingAttackCardType': pendingAttackCardType?.name,
   };
 
   factory UnoGameState.fromJson(Map<String, dynamic> json) => UnoGameState(
@@ -70,5 +73,8 @@ class UnoGameState {
         : null,
     pendingResponsePlayer: json['pendingResponsePlayer'],
     pendingDrawCount: json['pendingDrawCount'],
+    pendingAttackCardType: json['pendingAttackCardType'] != null 
+        ? CardType.values.byName(json['pendingAttackCardType']) 
+        : null,
   );
 }

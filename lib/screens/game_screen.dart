@@ -47,9 +47,15 @@ class _GameScreenState extends State<GameScreen>
   late AnimationController _deckGlowController;
   Timer? _lastTapTimer;
   String? _lastTappedCardId;
-  Color _backgroundColor = const Color(0xFF0A0A1A);
+  Color _backgroundColor = const Color(0xFF1a2a3a);
   bool _choosingResponseColor = false;
   UnoCard? _pendingResponseCard;
+  
+  // Чат
+  final List<ChatMessage> _chatMessages = [];
+  final TextEditingController _chatController = TextEditingController();
+  final ScrollController _chatScrollController = ScrollController();
+  bool _isChatOpen = false;
 
   bool get _isBotTurn => _gameState.currentPlayer.startsWith('Бот');
   bool get _noPlayableCards {
@@ -71,11 +77,61 @@ class _GameScreenState extends State<GameScreen>
     widget.server.onMessage = (GameMessage message) => _handleMessage(message);
     if (widget.isHost) _startGameAsHost();
     _loadBackground();
+    
+    // Добавляем приветственное сообщение в чат
+    _chatMessages.add(ChatMessage(
+      playerName: 'Система',
+      message: 'Добро пожаловать в игру!',
+      isSystem: true,
+      timestamp: DateTime.now(),
+    ));
   }
 
   Future<void> _loadBackground() async {
     setState(() {
       _backgroundColor = SettingsScreenState.backgroundColor;
+    });
+  }
+
+  void _sendChatMessage() {
+    if (_chatController.text.trim().isEmpty) return;
+    final message = _chatController.text.trim();
+    _chatController.clear();
+    
+    // Отправляем сообщение через сервер
+    widget.server.broadcastAll(GameMessage(
+      type: GameMessageType.chat,
+      data: {
+        'player': widget.playerName,
+        'message': message,
+        'timestamp': DateTime.now().toIso8601String(),
+      },
+    ));
+    
+    _addChatMessage(ChatMessage(
+      playerName: widget.playerName,
+      message: message,
+      isSystem: false,
+      timestamp: DateTime.now(),
+    ));
+  }
+  
+  void _addChatMessage(ChatMessage message) {
+    setState(() {
+      _chatMessages.add(message);
+    });
+    _scrollToBottom();
+  }
+  
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -86,6 +142,8 @@ class _GameScreenState extends State<GameScreen>
     _unoTimer?.cancel();
     _pulseController.dispose();
     _deckGlowController.dispose();
+    _chatController.dispose();
+    _chatScrollController.dispose();
     super.dispose();
   }
 
@@ -115,6 +173,17 @@ class _GameScreenState extends State<GameScreen>
 
   void _handleMessage(GameMessage message) {
     if (!mounted) return;
+    
+    if (message.type == GameMessageType.chat) {
+      _addChatMessage(ChatMessage(
+        playerName: message.data['player'],
+        message: message.data['message'],
+        isSystem: false,
+        timestamp: DateTime.parse(message.data['timestamp']),
+      ));
+      return;
+    }
+    
     setState(() {
       _gameState = UnoGameState.fromJson(message.data);
       _gameStarted = true;
@@ -471,7 +540,6 @@ class _GameScreenState extends State<GameScreen>
     final topCard = _gameState.topCard;
     final chosenColor = _gameState.chosenColor;
     
-    // Бот автоматически "нажимает" УНО, если у него 1 карта
     final botNeedUno = botHand.length == 1;
     bool botUnoPressed = false;
     
@@ -488,7 +556,6 @@ class _GameScreenState extends State<GameScreen>
       }
     }
 
-    // Ответ на pending
     if (_gameState.pendingResponsePlayer == botName) {
       if (_gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
         final canRespond = _canRespondToDraw(botName, _gameState.chosenColor!, _gameState.pendingAttackCardType!);
@@ -1038,39 +1105,427 @@ class _GameScreenState extends State<GameScreen>
 
     return Scaffold(
       backgroundColor: _backgroundColor,
-      body: Column(
+      body: Stack(
         children: [
-          _buildAppBar(isPending),
-          if (_needUnoButton) _buildUnoButton(),
-          if (isPending && _gameState.pendingDrawCount != null)
-            _buildChainInfo(),
-          _buildTopCards(canDraw),
-          _buildPlayerBar(),
-          if (_multiSelectMode) 
-            _buildHint('Выберите несколько карт с одинаковым значением или типом для сброса', Colors.amber, Icons.touch_app),
-          if (isPending) 
-            _buildPendingHint(),
-          if (_noPlayableCards && !isPending) 
-            _buildHint('Нет доступных карт — нажмите на колоду', Colors.yellow, Icons.touch_app),
-          const SizedBox(height: 4),
-          if (_multiSelectMode && _selectedCardIds.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _confirmMultiPlay,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber, 
-                    foregroundColor: Colors.black, 
-                    padding: const EdgeInsets.symmetric(vertical: 14)
+          // Основной игровой экран
+          Column(
+            children: [
+              // Верхние игроки
+              _buildTopPlayers(),
+              
+              // Центральная область с картами
+              Expanded(
+                flex: 3,
+                child: Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Колода
+                      _buildDeck(canDraw),
+                      const SizedBox(width: 30),
+                      // Верхняя карта сброса
+                      _buildDiscardPile(),
+                    ],
                   ),
-                  child: Text('Сбросить выбранные карты (${_selectedCardIds.length})', 
-                      style: const TextStyle(fontWeight: FontWeight.bold))
                 ),
               ),
+              
+              // Информация о ходе и кнопка УНО
+              if (_needUnoButton) _buildUnoButton(),
+              if (isPending && _gameState.pendingDrawCount != null)
+                _buildChainInfo(),
+              
+              // Нижние игроки (свои карты)
+              _buildBottomPlayers(),
+            ],
+          ),
+          
+          // Чат (плавающий справа)
+          _buildChatPanel(),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildTopPlayers() {
+    // Показываем всех игроков кроме текущего (который снизу)
+    final topPlayers = widget.players.where((p) => p != widget.playerName).toList();
+    
+    return Container(
+      height: 100,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: topPlayers.length,
+        itemBuilder: (context, index) {
+          final player = topPlayers[index];
+          final isCurrent = player == _gameState.currentPlayer;
+          final cardCount = _gameState.playerHands[player]?.length ?? 0;
+          final isBot = player.startsWith('Бот');
+          
+          return Container(
+            width: 120,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: isCurrent ? Colors.green.withOpacity(0.3) : Colors.black.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(16),
+              border: isCurrent ? Border.all(color: Colors.greenAccent, width: 2) : null,
             ),
-          _buildPlayerHand(myHand, isPending),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // Аватар
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: isBot ? Colors.grey.shade700 : Colors.blue.shade700,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isBot ? Icons.computer : Icons.person,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  player,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 12,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '$cardCount 🃏',
+                  style: const TextStyle(color: Colors.white70, fontSize: 10),
+                ),
+                if (player == _gameState.pendingResponsePlayer)
+                  const Chip(
+                    label: Text('ОТВЕТ!', style: TextStyle(fontSize: 8)),
+                    backgroundColor: Colors.orange,
+                    padding: EdgeInsets.all(0),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+  
+  Widget _buildBottomPlayers() {
+    final myHand = _gameState.currentHand(widget.playerName);
+    final isPending = _gameState.pendingResponsePlayer == widget.playerName;
+    final isMyTurn = _isMyTurn;
+    
+    return Container(
+      height: 160,
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.2),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Строка с информацией о игроке
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    color: Colors.amber,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.person, color: Colors.white),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  widget.playerName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const Spacer(),
+                if (_gameState.pendingResponsePlayer == widget.playerName)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Text(
+                      'ОТВЕТЬТЕ!',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                if (isMyTurn && _gameState.pendingResponsePlayer != widget.playerName)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Text(
+                      'ВАШ ХОД',
+                      style: TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // Карты в руке
+          Expanded(
+            child: _buildPlayerHand(myHand, isPending),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildDeck(bool canDraw) {
+    return GestureDetector(
+      onTap: canDraw ? _drawCard : null,
+      child: AnimatedBuilder(
+        animation: _deckGlowController,
+        builder: (context, child) {
+          final glow = (_noPlayableCards && _gameState.pendingResponsePlayer != widget.playerName) 
+              ? _deckGlowController.value 
+              : 0.0;
+          return Container(
+            width: 100,
+            height: 140,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1A1A1A), Color(0xFF333333)],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Color.lerp(Colors.white.withOpacity(0.3), Colors.yellow, glow)!,
+                width: 2 + glow * 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.yellow.withOpacity(glow * 0.6),
+                  blurRadius: 10 + glow * 15,
+                  spreadRadius: glow * 4,
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'УНО',
+                        style: TextStyle(
+                          color: Color(0xFFFF1744),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${_gameState.drawPileCount}',
+                        style: const TextStyle(color: Colors.white70, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_noPlayableCards && _gameState.pendingResponsePlayer != widget.playerName)
+                  Positioned(
+                    bottom: 8,
+                    left: 0,
+                    right: 0,
+                    child: const Text(
+                      'Бери!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.yellow, fontSize: 12),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+  
+  Widget _buildDiscardPile() {
+    return Container(
+      width: 100,
+      height: 140,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(3, 4),
+          ),
+        ],
+      ),
+      child: _buildCardWidget(_gameState.topCard, big: true),
+    );
+  }
+  
+  Widget _buildChatPanel() {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 300),
+      right: _isChatOpen ? 0 : -320,
+      top: 0,
+      bottom: 0,
+      child: Container(
+        width: 320,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2E).withOpacity(0.95),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(-2, 0),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            // Заголовок чата
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.white24)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.chat, color: Color(0xFF7C4DFF), size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Чат',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: Icon(
+                      _isChatOpen ? Icons.chevron_right : Icons.chevron_left,
+                      color: Colors.white70,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isChatOpen = !_isChatOpen;
+                      });
+                    },
+                  ),
+                ],
+              ),
+            ),
+            // Сообщения
+            Expanded(
+              child: ListView.builder(
+                controller: _chatScrollController,
+                padding: const EdgeInsets.all(8),
+                itemCount: _chatMessages.length,
+                itemBuilder: (context, index) {
+                  final msg = _chatMessages[index];
+                  return _buildChatMessage(msg);
+                },
+              ),
+            ),
+            // Поле ввода
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Colors.white24)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _chatController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Написать...',
+                        hintStyle: const TextStyle(color: Colors.grey),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.1),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                      ),
+                      onSubmitted: (_) => _sendChatMessage(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.send, color: Color(0xFF7C4DFF)),
+                    onPressed: _sendChatMessage,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildChatMessage(ChatMessage msg) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: msg.isSystem 
+            ? Colors.grey.withOpacity(0.2)
+            : (msg.playerName == widget.playerName 
+                ? const Color(0xFF7C4DFF).withOpacity(0.3)
+                : Colors.white.withOpacity(0.1)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!msg.isSystem)
+            Text(
+              msg.playerName,
+              style: TextStyle(
+                color: msg.playerName == widget.playerName 
+                    ? const Color(0xFF7C4DFF)
+                    : Colors.greenAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          Text(
+            msg.message,
+            style: TextStyle(
+              color: msg.isSystem ? Colors.grey : Colors.white,
+              fontSize: 13,
+            ),
+          ),
+          Text(
+            '${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}',
+            style: const TextStyle(color: Colors.grey, fontSize: 9),
+          ),
         ],
       ),
     );
@@ -1121,53 +1576,6 @@ class _GameScreenState extends State<GameScreen>
     }
     
     return _buildHint(hint, Colors.orange, Icons.warning);
-  }
-
-  AppBar _buildAppBar(bool isPending) {
-    return AppBar(
-      backgroundColor: Colors.transparent, 
-      elevation: 0,
-      title: Row(
-        mainAxisSize: MainAxisSize.min, 
-        children: [
-          const Text('Уно ', style: TextStyle(color: Colors.white)), 
-          Text(_direction, style: const TextStyle(fontSize: 20))
-        ]
-      ),
-      centerTitle: true,
-      leading: IconButton(
-        icon: const Icon(Icons.exit_to_app, color: Colors.white70), 
-        onPressed: () { 
-          widget.server.stop(); 
-          Navigator.pop(context); 
-        }
-      ),
-      actions: [
-        if (_isBotTurn) 
-          _buildChip('БОТ ДУМАЕТ...', const Color(0xFF7C4DFF), true),
-        if (isPending) 
-          _buildChip('ОТВЕТЬТЕ!', Colors.orange, false),
-        if (_isMyTurn && !isPending) 
-          _buildChip('ВАШ ХОД', const Color(0xFF00E676), false),
-      ],
-    );
-  }
-
-  Widget _buildChip(String text, Color color, bool spinner) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8), 
-      child: Chip(
-        label: Text(text, style: const TextStyle(color: Colors.white, fontSize: 11)), 
-        backgroundColor: color,
-        avatar: spinner 
-            ? const SizedBox(
-                width: 14, 
-                height: 14, 
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
-              ) 
-            : null,
-      ),
-    );
   }
 
   Widget _buildUnoButton() {
@@ -1234,132 +1642,6 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  Widget _buildTopCards(bool canDraw) {
-    return Expanded(
-      flex: 2,
-      child: Center(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            GestureDetector(
-              onTap: canDraw ? _drawCard : null,
-              child: AnimatedBuilder(
-                animation: _deckGlowController, 
-                builder: (context, child) {
-                  final glow = (_noPlayableCards && _gameState.pendingResponsePlayer != widget.playerName) 
-                      ? _deckGlowController.value 
-                      : 0.0;
-                  return Container(
-                    width: 80, 
-                    height: 115,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFF1A1A1A), Color(0xFF333333)]),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: Color.lerp(Colors.white.withOpacity(0.3), Colors.yellow, glow)!, 
-                        width: 2 + glow * 2
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.yellow.withOpacity(glow * 0.6), 
-                          blurRadius: 10 + glow * 15, 
-                          spreadRadius: glow * 4
-                        ),
-                        const BoxShadow(
-                          color: Colors.black38, 
-                          blurRadius: 10, 
-                          offset: Offset(3, 4)
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center, 
-                        children: [
-                          const Text(
-                            'УНО',
-                            style: TextStyle(
-                              color: Color(0xFFFF1744), 
-                              fontWeight: FontWeight.w900, 
-                              fontSize: 16, 
-                              letterSpacing: 2
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            width: 40, 
-                            height: 3, 
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue]
-                              ), 
-                              borderRadius: BorderRadius.all(Radius.circular(2))
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(width: 24),
-            _buildCardWidget(_gameState.topCard, big: true),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlayerBar() {
-    return Container(
-      height: 50, 
-      margin: const EdgeInsets.symmetric(horizontal: 8),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal, 
-        itemCount: widget.players.length, 
-        itemBuilder: (context, index) {
-          final player = widget.players[index];
-          final isCurrent = player == _gameState.currentPlayer;
-          final cardCount = _gameState.playerHands[player]?.length ?? 0;
-          return Container(
-            margin: const EdgeInsets.symmetric(horizontal: 3), 
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: isCurrent ? Colors.green.withOpacity(0.3) : Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(10), 
-              border: isCurrent 
-                  ? Border.all(color: Colors.greenAccent, width: 2) 
-                  : Border.all(color: Colors.white12)
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min, 
-              children: [
-                Icon(
-                  player.startsWith('Бот') ? Icons.computer : Icons.person, 
-                  size: 14, 
-                  color: player == widget.playerName ? Colors.amber : Colors.white70
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  player, 
-                  style: TextStyle(
-                    fontSize: 11, 
-                    color: Colors.white, 
-                    fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text('$cardCount🃏', style: const TextStyle(fontSize: 10, color: Colors.white70)),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildHint(String text, Color color, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(8), 
@@ -1377,146 +1659,131 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _buildPlayerHand(List<UnoCard> myHand, bool isPending) {
     if (myHand.isEmpty) {
-      return const Expanded(
-        flex: 3,
-        child: Center(
-          child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38)),
-        ),
+      return const Center(
+        child: Text('У вас нет карт!', style: TextStyle(fontSize: 18, color: Colors.white38)),
       );
     }
     
     final totalCards = myHand.length;
-    const double cardWidth = 75;
-    const double cardHeight = 110;
+    const double cardWidth = 85;
+    const double cardHeight = 120;
     
     final screenWidth = MediaQuery.of(context).size.width;
-    final availableWidth = screenWidth - 24;
+    final availableWidth = screenWidth - 24 - (_isChatOpen ? 320 : 0);
     
     double cardSpacing;
     
     if (totalCards <= 5) {
-      cardSpacing = 8.0;
+      cardSpacing = 10.0;
     } else if (totalCards <= 8) {
-      cardSpacing = 20.0;
+      cardSpacing = 25.0;
     } else if (totalCards <= 12) {
-      cardSpacing = 15.0;
+      cardSpacing = 20.0;
     } else {
-      cardSpacing = 12.0;
+      cardSpacing = 15.0;
     }
     
     final double totalWidth = cardWidth + (totalCards - 1) * cardSpacing;
     if (totalWidth > availableWidth) {
       cardSpacing = (availableWidth - cardWidth) / (totalCards - 1);
-      if (cardSpacing < 8) cardSpacing = 8;
+      if (cardSpacing < 10) cardSpacing = 10;
     }
     
-    return Expanded(
-      flex: 3,
-      child: GestureDetector(
-        onTap: () {
-          if (_multiSelectMode) {
-            setState(() {
-              _selectedCardIds.clear();
-              _multiSelectMode = false;
-            });
-          }
-        },
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: List.generate(totalCards, (i) {
-              final card = myHand[i];
-              final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
-              
-              bool canRespond = false;
-              if (isPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
-                final attackType = _gameState.pendingAttackCardType!;
-                
-                if (card.type == CardType.draw2) {
-                  if (attackType == CardType.draw2) {
-                    canRespond = true;
-                  } else if (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8) {
-                    canRespond = card.color == _gameState.chosenColor;
-                  }
-                } else if (card.type == CardType.wildDraw4) {
-                  canRespond = (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8);
-                } else if (card.type == CardType.wildDraw8) {
-                  canRespond = (attackType == CardType.wildDraw8);
-                }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: List.generate(totalCards, (i) {
+          final card = myHand[i];
+          final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
+          
+          bool canRespond = false;
+          if (isPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
+            final attackType = _gameState.pendingAttackCardType!;
+            
+            if (card.type == CardType.draw2) {
+              if (attackType == CardType.draw2) {
+                canRespond = true;
+              } else if (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8) {
+                canRespond = card.color == _gameState.chosenColor;
               }
-              
-              final isSelected = _selectedCardIds.contains(card.id);
-              final canTap = canPlay || canRespond;
-              
-              return Container(
-                key: ValueKey('card_${card.id}'),
-                margin: EdgeInsets.only(
-                  right: i < totalCards - 1 ? cardSpacing : 0,
-                  top: (canTap) ? 0 : 18,
-                ),
-                child: GestureDetector(
-                  onTap: () => _onCardTap(card),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    decoration: isSelected 
-                        ? BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.amber.withOpacity(0.8),
-                                blurRadius: 16,
-                                spreadRadius: 3,
-                              ),
-                            ],
-                          ) 
-                        : null,
-                    child: Opacity(
-                      opacity: canTap ? 1.0 : 0.85,
-                      child: Stack(
-                        children: [
-                          _buildCardWidget(card, big: false),
-                          if (canRespond)
-                            Positioned(
-                              top: -5,
-                              right: -5,
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: const BoxDecoration(
-                                  color: Colors.green,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  card.type == CardType.draw2 ? Icons.reply : Icons.color_lens,
-                                  size: 16, 
-                                  color: Colors.white
-                                ),
-                              ),
-                            ),
-                          if (isSelected)
-                            const Positioned(
-                              top: -5,
-                              left: -5,
-                              child: Icon(Icons.check_circle, color: Colors.amber, size: 22),
-                            ),
+            } else if (card.type == CardType.wildDraw4) {
+              canRespond = (attackType == CardType.wildDraw4 || attackType == CardType.wildDraw8);
+            } else if (card.type == CardType.wildDraw8) {
+              canRespond = (attackType == CardType.wildDraw8);
+            }
+          }
+          
+          final isSelected = _selectedCardIds.contains(card.id);
+          final canTap = canPlay || canRespond;
+          
+          return Container(
+            key: ValueKey('card_${card.id}'),
+            margin: EdgeInsets.only(
+              right: i < totalCards - 1 ? cardSpacing : 0,
+              top: (canTap) ? 0 : 15,
+            ),
+            child: GestureDetector(
+              onTap: () => _onCardTap(card),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                transform: Matrix4.identity()..rotateZ(isSelected ? -0.05 : 0),
+                decoration: isSelected 
+                    ? BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.amber.withOpacity(0.8),
+                            blurRadius: 16,
+                            spreadRadius: 3,
+                          ),
                         ],
-                      ),
-                    ),
+                      ) 
+                    : null,
+                child: Opacity(
+                  opacity: canTap ? 1.0 : 0.7,
+                  child: Stack(
+                    children: [
+                      _buildCardWidget(card, big: false),
+                      if (canRespond)
+                        Positioned(
+                          top: -5,
+                          right: -5,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              card.type == CardType.draw2 ? Icons.reply : Icons.color_lens,
+                              size: 16, 
+                              color: Colors.white
+                            ),
+                          ),
+                        ),
+                      if (isSelected)
+                        const Positioned(
+                          top: -5,
+                          left: -5,
+                          child: Icon(Icons.check_circle, color: Colors.amber, size: 22),
+                        ),
+                    ],
                   ),
                 ),
-              );
-            }),
-          ),
-        ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }
 
   Widget _buildCardWidget(UnoCard card, {bool big = false}) {
-    final w = big ? 105.0 : 75.0;
-    final h = big ? 155.0 : 110.0;
+    final w = big ? 100.0 : 85.0;
+    final h = big ? 145.0 : 120.0;
     final isWild = card.color == CardColor.wild;
     final isClear = card.type == CardType.clear;
     final bgColor = card.displayColor;
@@ -1555,13 +1822,13 @@ class _GameScreenState extends State<GameScreen>
       height: h,
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.4), width: 2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.6),
-            blurRadius: 8,
-            offset: const Offset(2, 4),
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 6,
+            offset: const Offset(2, 3),
           ),
         ],
       ),
@@ -1570,12 +1837,12 @@ class _GameScreenState extends State<GameScreen>
           if (!isWild && !isClear)
             Center(
               child: Transform.rotate(
-                angle: -0.3,
+                angle: -0.2,
                 child: Container(
-                  width: w * 0.7,
-                  height: h * 0.55,
+                  width: w * 0.65,
+                  height: h * 0.5,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.25),
+                    color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(40),
                   ),
                 ),
@@ -1585,7 +1852,7 @@ class _GameScreenState extends State<GameScreen>
             Center(
               child: Icon(
                 Icons.cleaning_services,
-                size: big ? 60 : 45,
+                size: big ? 50 : 40,
                 color: Colors.white.withOpacity(0.3),
               ),
             ),
@@ -1593,14 +1860,14 @@ class _GameScreenState extends State<GameScreen>
             child: Text(
               displayText,
               style: TextStyle(
-                fontSize: big ? 48 : 34,
+                fontSize: big ? 44 : 32,
                 fontWeight: FontWeight.w900,
                 color: txtColor,
                 shadows: [
                   Shadow(
-                    color: Colors.black.withOpacity(0.4),
-                    blurRadius: 4,
-                    offset: const Offset(1, 2),
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 3,
+                    offset: const Offset(1, 1),
                   ),
                 ],
               ),
@@ -1613,7 +1880,7 @@ class _GameScreenState extends State<GameScreen>
               child: Text(
                 '${card.number}',
                 style: TextStyle(
-                  fontSize: big ? 20 : 14,
+                  fontSize: big ? 18 : 14,
                   fontWeight: FontWeight.w900,
                   color: txtColor,
                 ),
@@ -1625,14 +1892,14 @@ class _GameScreenState extends State<GameScreen>
               left: 4,
               right: 4,
               child: Container(
-                height: 5,
+                height: 6,
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue],
                   ),
                   borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(12),
-                    bottomRight: Radius.circular(12),
+                    bottomLeft: Radius.circular(10),
+                    bottomRight: Radius.circular(10),
                   ),
                 ),
               ),
@@ -1651,4 +1918,18 @@ class _GameScreenState extends State<GameScreen>
       case CardColor.wild: return Colors.purple; 
     }
   }
+}
+
+class ChatMessage {
+  final String playerName;
+  final String message;
+  final bool isSystem;
+  final DateTime timestamp;
+  
+  ChatMessage({
+    required this.playerName,
+    required this.message,
+    required this.isSystem,
+    required this.timestamp,
+  });
 }

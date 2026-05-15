@@ -8,6 +8,553 @@ import '../models/bot_player.dart';
 import '../services/game_server.dart';
 import 'settings_screen.dart';
 
+// ========== АНИМИРОВАННЫЕ КОМПОНЕНТЫ ==========
+
+class AnimatedCard extends StatefulWidget {
+  final UnoCard card;
+  final bool isBig;
+  final bool isSelected;
+  final bool canTap;
+  final VoidCallback onTap;
+  final bool isDiscard;
+
+  const AnimatedCard({
+    super.key,
+    required this.card,
+    this.isBig = false,
+    this.isSelected = false,
+    this.canTap = true,
+    required this.onTap,
+    this.isDiscard = false,
+  });
+
+  @override
+  State<AnimatedCard> createState() => _AnimatedCardState();
+}
+
+class _AnimatedCardState extends State<AnimatedCard> with SingleTickerProviderStateMixin {
+  late AnimationController _flipController;
+  late Animation<double> _flipAnimation;
+  late AnimationController _scaleController;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _flipController = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
+    _flipAnimation = Tween<double>(begin: 0, end: 1).animate(CurvedAnimation(
+      parent: _flipController,
+      curve: Curves.easeInOut,
+    ));
+    
+    _scaleController = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
+    _scaleAnimation = Tween<double>(begin: 1, end: 1.1).animate(CurvedAnimation(
+      parent: _scaleController,
+      curve: Curves.easeInOut,
+    ));
+    
+    if (widget.isDiscard) {
+      _flipController.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _flipController.dispose();
+    _scaleController.dispose();
+    super.dispose();
+  }
+
+  void animateTap() {
+    _scaleController.forward().then((_) => _scaleController.reverse());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        if (widget.canTap) {
+          animateTap();
+          widget.onTap();
+        }
+      },
+      child: AnimatedBuilder(
+        animation: _flipAnimation,
+        builder: (context, child) {
+          final isFlipped = _flipAnimation.value > 0.5;
+          final angle = _flipAnimation.value * 3.14159;
+          
+          return Transform(
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001)
+              ..rotateY(angle),
+            alignment: Alignment.center,
+            child: (isFlipped && widget.isDiscard) 
+                ? const SizedBox.shrink()
+                : Transform.scale(
+                    scale: widget.isSelected ? 1.05 : 1.0,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: widget.isSelected ? [
+                          BoxShadow(
+                            color: Colors.amber.withOpacity(0.8),
+                            blurRadius: 16,
+                            spreadRadius: 3,
+                          ),
+                        ] : null,
+                      ),
+                      child: _buildCardContent(),
+                    ),
+                  ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCardContent() {
+    final w = widget.isBig ? 100.0 : 85.0;
+    final h = widget.isBig ? 145.0 : 120.0;
+    final isWild = widget.card.color == CardColor.wild;
+    final isClear = widget.card.type == CardType.clear;
+    final bgColor = widget.card.displayColor;
+    final txtColor = (widget.card.color == CardColor.yellow) ? Colors.black : Colors.white;
+    
+    String displayText = '';
+    switch (widget.card.type) {
+      case CardType.number:
+        displayText = '${widget.card.number}';
+        break;
+      case CardType.skip:
+        displayText = '⊘';
+        break;
+      case CardType.reverse:
+        displayText = '⟲';
+        break;
+      case CardType.draw2:
+        displayText = '+2';
+        break;
+      case CardType.wild:
+        displayText = 'W';
+        break;
+      case CardType.wildDraw4:
+        displayText = '+4';
+        break;
+      case CardType.wildDraw8:
+        displayText = '+8';
+        break;
+      case CardType.clear:
+        displayText = '🧹';
+        break;
+    }
+    
+    return Container(
+      width: w,
+      height: h,
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.4),
+            blurRadius: 6,
+            offset: const Offset(2, 3),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          if (!isWild && !isClear)
+            Center(
+              child: Transform.rotate(
+                angle: -0.2,
+                child: Container(
+                  width: w * 0.65,
+                  height: h * 0.5,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                ),
+              ),
+            ),
+          if (isClear)
+            Center(
+              child: Icon(
+                Icons.cleaning_services,
+                size: widget.isBig ? 50 : 40,
+                color: Colors.white.withOpacity(0.3),
+              ),
+            ),
+          Center(
+            child: Text(
+              displayText,
+              style: TextStyle(
+                fontSize: widget.isBig ? 44 : 32,
+                fontWeight: FontWeight.w900,
+                color: txtColor,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 3,
+                    offset: const Offset(1, 1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (widget.card.type == CardType.number)
+            Positioned(
+              top: 6,
+              left: 10,
+              child: Text(
+                '${widget.card.number}',
+                style: TextStyle(
+                  fontSize: widget.isBig ? 18 : 14,
+                  fontWeight: FontWeight.w900,
+                  color: txtColor,
+                ),
+              ),
+            ),
+          if (isWild)
+            Positioned(
+              bottom: 0,
+              left: 4,
+              right: 4,
+              child: Container(
+                height: 6,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(10),
+                    bottomRight: Radius.circular(10),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class AnimatedDeck extends StatefulWidget {
+  final bool canDraw;
+  final int cardCount;
+  final VoidCallback onTap;
+  final bool isGlowing;
+
+  const AnimatedDeck({
+    super.key,
+    required this.canDraw,
+    required this.cardCount,
+    required this.onTap,
+    this.isGlowing = false,
+  });
+
+  @override
+  State<AnimatedDeck> createState() => _AnimatedDeckState();
+}
+
+class _AnimatedDeckState extends State<AnimatedDeck> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _pulseAnimation = Tween<double>(begin: 1, end: 1.1).animate(CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeInOut,
+    ));
+    
+    if (widget.isGlowing) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(AnimatedDeck oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isGlowing && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isGlowing && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.canDraw ? widget.onTap : null,
+      child: AnimatedBuilder(
+        animation: _pulseAnimation,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: widget.isGlowing ? _pulseAnimation.value : 1.0,
+            child: Container(
+              width: 100,
+              height: 140,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1A1A1A), Color(0xFF333333)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: widget.isGlowing ? Colors.yellow : Colors.white.withOpacity(0.3),
+                  width: widget.isGlowing ? 3 : 2,
+                ),
+                boxShadow: widget.isGlowing ? [
+                  BoxShadow(
+                    color: Colors.yellow.withOpacity(0.6),
+                    blurRadius: 20,
+                    spreadRadius: 5,
+                  ),
+                ] : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(3, 4),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text(
+                          'УНО',
+                          style: TextStyle(
+                            color: Color(0xFFFF1744),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 18,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${widget.cardCount}',
+                          style: const TextStyle(color: Colors.white70, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.canDraw)
+                    Positioned(
+                      bottom: 8,
+                      left: 0,
+                      right: 0,
+                      child: const Text(
+                        'Нажми, чтобы взять',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.yellow, fontSize: 10),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class AnimatedDiscardPile extends StatefulWidget {
+  final UnoCard card;
+
+  const AnimatedDiscardPile({super.key, required this.card});
+
+  @override
+  State<AnimatedDiscardPile> createState() => _AnimatedDiscardPileState();
+}
+
+class _AnimatedDiscardPileState extends State<AnimatedDiscardPile> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _rotationAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.elasticOut,
+    ));
+    _rotationAnimation = Tween<double>(begin: -0.1, end: 0).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    ));
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(AnimatedDiscardPile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.card.id != widget.card.id) {
+      _controller.reset();
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform(
+          transform: Matrix4.identity()
+            ..scale(_scaleAnimation.value)
+            ..rotateZ(_rotationAnimation.value),
+          alignment: Alignment.center,
+          child: Container(
+            width: 100,
+            height: 140,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(3, 4),
+                ),
+              ],
+            ),
+            child: _buildCardContent(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCardContent() {
+    final isWild = widget.card.color == CardColor.wild;
+    final isClear = widget.card.type == CardType.clear;
+    final bgColor = widget.card.displayColor;
+    final txtColor = (widget.card.color == CardColor.yellow) ? Colors.black : Colors.white;
+    
+    String displayText = '';
+    switch (widget.card.type) {
+      case CardType.number:
+        displayText = '${widget.card.number}';
+        break;
+      case CardType.skip:
+        displayText = '⊘';
+        break;
+      case CardType.reverse:
+        displayText = '⟲';
+        break;
+      case CardType.draw2:
+        displayText = '+2';
+        break;
+      case CardType.wild:
+        displayText = 'W';
+        break;
+      case CardType.wildDraw4:
+        displayText = '+4';
+        break;
+      case CardType.wildDraw8:
+        displayText = '+8';
+        break;
+      case CardType.clear:
+        displayText = '🧹';
+        break;
+    }
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
+      ),
+      child: Stack(
+        children: [
+          if (!isWild && !isClear)
+            Center(
+              child: Transform.rotate(
+                angle: -0.2,
+                child: Container(
+                  width: 65,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                ),
+              ),
+            ),
+          if (isClear)
+            Center(
+              child: Icon(
+                Icons.cleaning_services,
+                size: 50,
+                color: Colors.white.withOpacity(0.3),
+              ),
+            ),
+          Center(
+            child: Text(
+              displayText,
+              style: TextStyle(
+                fontSize: 44,
+                fontWeight: FontWeight.w900,
+                color: txtColor,
+                shadows: [
+                  Shadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 3,
+                    offset: const Offset(1, 1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isWild)
+            Positioned(
+              bottom: 0,
+              left: 4,
+              right: 4,
+              child: Container(
+                height: 6,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(10),
+                    bottomRight: Radius.circular(10),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ========== ОСНОВНОЙ КЛАСС ИГРЫ ==========
+
 class GameScreen extends StatefulWidget {
   final GameServer server;
   final List<String> players;
@@ -45,13 +592,13 @@ class _GameScreenState extends State<GameScreen>
   int _unoSecondsLeft = 10;
   Timer? _unoTimer;
   late AnimationController _pulseController;
-  late AnimationController _deckGlowController;
   Timer? _lastTapTimer;
   String? _lastTappedCardId;
   Color _backgroundColor = const Color(0xFF1a2a3a);
   bool _choosingResponseColor = false;
   bool _isResponseColorPickerShowing = false;
   UnoCard? _pendingResponseCard;
+  bool _isAnimating = false;
   
   // Чат
   final List<ChatMessage> _chatMessages = [];
@@ -75,7 +622,6 @@ class _GameScreenState extends State<GameScreen>
     ]);
     _deck = UnoDeck(seed: 42);
     _pulseController = AnimationController(vsync: this, duration: const Duration(seconds: 1));
-    _deckGlowController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
     widget.server.onMessage = (GameMessage message) => _handleMessage(message);
     if (widget.isHost) _startGameAsHost();
     _loadBackground();
@@ -141,7 +687,6 @@ class _GameScreenState extends State<GameScreen>
     _botTimer?.cancel();
     _unoTimer?.cancel();
     _pulseController.dispose();
-    _deckGlowController.dispose();
     _chatController.dispose();
     _chatScrollController.dispose();
     super.dispose();
@@ -247,12 +792,6 @@ class _GameScreenState extends State<GameScreen>
       _startUnoTimer();
     } else {
       _needUnoButton = false;
-    }
-    
-    if (_noPlayableCards && _gameState.pendingResponsePlayer != widget.playerName) {
-      _deckGlowController.repeat(reverse: true);
-    } else {
-      _deckGlowController.stop();
     }
     
     if (_isBotTurn && widget.isHost) {
@@ -375,7 +914,6 @@ class _GameScreenState extends State<GameScreen>
     final attackType = _gameState.pendingAttackCardType;
     
     if (isDraw2) {
-      // +2 НЕ меняет цвет, просто завершаем цепочку
       final prevIndex = _gameState.isClockwise
           ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
           : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
@@ -389,7 +927,6 @@ class _GameScreenState extends State<GameScreen>
       _updateTurn();
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
-      // +4 и +8 меняют цвет - нужен выбор цвета
       _pendingResponseCard = card;
       _choosingResponseColor = true;
       _isResponseColorPickerShowing = false;
@@ -404,8 +941,6 @@ class _GameScreenState extends State<GameScreen>
   
   void _onResponseColorChosen(CardColor color) {
     if (_pendingResponseCard == null) return;
-    
-    debugPrint('Выбран цвет: $color для ответа на +4/+8');
     
     _choosingResponseColor = false;
     _isResponseColorPickerShowing = false;
@@ -788,7 +1323,6 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     
-    // Мультисброс ТОЛЬКО для цифровых карт
     if (card.type == CardType.number) {
       final multiCards = _getMultiPlayableCards();
       if (multiCards.isNotEmpty) {
@@ -875,14 +1409,19 @@ class _GameScreenState extends State<GameScreen>
     return [];
   }
 
-  void _executePlayCard(List<UnoCard> cards) {
-    if (cards.isEmpty) return;
+  void _executePlayCard(List<UnoCard> cards) async {
+    if (cards.isEmpty || _isAnimating) return;
+    
+    _isAnimating = true;
+    
+    await Future.delayed(const Duration(milliseconds: 200));
     
     final sortedCards = List<UnoCard>.from(cards);
     final handBefore = _gameState.currentHand(widget.playerName).length;
     
     for (var card in sortedCards) {
       _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == card.id);
+      await Future.delayed(const Duration(milliseconds: 50));
     }
     
     final lastCard = sortedCards.last;
@@ -905,10 +1444,10 @@ class _GameScreenState extends State<GameScreen>
       _updateTurn();
       _broadcastState();
       if (_gameState.winner != null) _showWinDialog(_gameState.winner!);
+      _isAnimating = false;
       return;
     }
     
-    // Применяем эффект ПОСЛЕДНЕЙ карты
     if (lastCard.type == CardType.clear) {
       _applyClearCardEffect(lastCard.color);
       _gameState.nextTurn();
@@ -928,24 +1467,36 @@ class _GameScreenState extends State<GameScreen>
     _updateTurn();
     _broadcastState();
     if (_gameState.winner != null) _showWinDialog(_gameState.winner!);
+    _isAnimating = false;
   }
 
-  void _drawCard() {
-    if (!_isMyTurn && _gameState.pendingResponsePlayer != widget.playerName) return;
+  void _drawCard() async {
+    if ((!_isMyTurn && _gameState.pendingResponsePlayer != widget.playerName) || _isAnimating) return;
     if (!_gameStarted) return;
+    
+    _isAnimating = true;
+    
+    await Future.delayed(const Duration(milliseconds: 200));
+    
     if (_gameState.pendingResponsePlayer == widget.playerName) {
       final drawCount = _gameState.pendingDrawCount ?? 0;
-      _gameState.playerHands[widget.playerName]!.addAll(_deck.drawMultiple(drawCount > 0 ? drawCount : 4));
+      for (int i = 0; i < (drawCount > 0 ? drawCount : 4); i++) {
+        _gameState.playerHands[widget.playerName]!.add(_deck.draw());
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
       _gameState.pendingResponsePlayer = null;
       _gameState.pendingDrawCount = 0;
       _gameState.pendingAttackCardType = null;
     } else {
       _gameState.playerHands[widget.playerName]!.add(_deck.draw());
     }
+    
     _gameState.drawPileCount = _deck.cards.length;
     _gameState.nextTurn();
     _updateTurn();
     _broadcastState();
+    
+    _isAnimating = false;
   }
 
   void _showWinDialog(String winner) {
@@ -1034,10 +1585,8 @@ class _GameScreenState extends State<GameScreen>
     
     _isResponseColorPickerShowing = true;
     
-    // Таймаут 10 секунд
     Timer(const Duration(seconds: 10), () {
       if (_isResponseColorPickerShowing && mounted) {
-        debugPrint('⚠️ Таймаут выбора цвета');
         setState(() {
           _isResponseColorPickerShowing = false;
           _choosingResponseColor = false;
@@ -1336,92 +1885,16 @@ class _GameScreenState extends State<GameScreen>
   }
   
   Widget _buildDeck(bool canDraw) {
-    return GestureDetector(
-      onTap: canDraw ? _drawCard : null,
-      child: AnimatedBuilder(
-        animation: _deckGlowController,
-        builder: (context, child) {
-          final glow = (_noPlayableCards && _gameState.pendingResponsePlayer != widget.playerName) 
-              ? _deckGlowController.value 
-              : 0.0;
-          return Container(
-            width: 100,
-            height: 140,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1A1A1A), Color(0xFF333333)],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Color.lerp(Colors.white.withOpacity(0.3), Colors.yellow, glow)!,
-                width: 2 + glow * 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.yellow.withOpacity(glow * 0.6),
-                  blurRadius: 10 + glow * 15,
-                  spreadRadius: glow * 4,
-                ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        'УНО',
-                        style: TextStyle(
-                          color: Color(0xFFFF1744),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${_gameState.drawPileCount}',
-                        style: const TextStyle(color: Colors.white70, fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_noPlayableCards && _gameState.pendingResponsePlayer != widget.playerName)
-                  Positioned(
-                    bottom: 8,
-                    left: 0,
-                    right: 0,
-                    child: const Text(
-                      'Бери!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.yellow, fontSize: 12),
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
+    return AnimatedDeck(
+      canDraw: canDraw,
+      cardCount: _gameState.drawPileCount,
+      onTap: _drawCard,
+      isGlowing: _noPlayableCards && _gameState.pendingResponsePlayer != widget.playerName,
     );
   }
   
   Widget _buildDiscardPile() {
-    return Container(
-      width: 100,
-      height: 140,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(3, 4),
-          ),
-        ],
-      ),
-      child: _buildCardWidget(_gameState.topCard, big: true),
-    );
+    return AnimatedDiscardPile(card: _gameState.topCard);
   }
   
   Widget _buildChatPanel() {
@@ -1604,65 +2077,80 @@ class _GameScreenState extends State<GameScreen>
 
   Widget _buildUnoButton() {
     return AnimatedBuilder(
-      animation: _pulseController, 
-      builder: (context, child) => Container(
-        padding: const EdgeInsets.all(12), 
-        margin: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Colors.red, Colors.deepOrange]),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.red.withOpacity(0.3 + _pulseController.value * 0.3), 
-              blurRadius: 12 + _pulseController.value * 10,
-            )
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.warning, color: Colors.white, size: 28),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                children: [
-                  const Text(
-                    'У ВАС ОСТАЛАСЬ 1 КАРТА!',
-                    style: TextStyle(
-                      color: Colors.white, 
-                      fontWeight: FontWeight.w900, 
-                      fontSize: 20
-                    ),
-                  ),
-                  Text(
-                    'Нажмите УНО до конца хода! $_unoSecondsLeft сек',
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
+      animation: _pulseController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: 1 + _pulseController.value * 0.05,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: _unoPressed 
+                    ? [Colors.green, Colors.greenAccent] 
+                    : [Colors.red, Colors.deepOrange],
               ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red.withOpacity(0.3 + _pulseController.value * 0.3),
+                  blurRadius: 12 + _pulseController.value * 10,
+                )
+              ],
             ),
-            const SizedBox(width: 12),
-            SizedBox(
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _pressUno,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white, 
-                  foregroundColor: Colors.red,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24)
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.warning, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    children: [
+                      const Text(
+                        'У ВАС ОСТАЛАСЬ 1 КАРТА!',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 20
+                        ),
+                      ),
+                      Text(
+                        'Нажмите УНО до конца хода! $_unoSecondsLeft сек',
+                        style: const TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                    ],
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
                 ),
-                child: const Text(
-                  'УНО!',
-                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)
+                const SizedBox(width: 12),
+                TweenAnimationBuilder(
+                  tween: Tween<double>(begin: 1, end: 1.1),
+                  duration: const Duration(milliseconds: 500),
+                  builder: (context, scale, child) {
+                    return Transform.scale(
+                      scale: scale,
+                      child: ElevatedButton(
+                        onPressed: _pressUno,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.red,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24)
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                        ),
+                        child: const Text(
+                          'УНО!',
+                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -1734,186 +2222,15 @@ class _GameScreenState extends State<GameScreen>
               right: i < totalCards - 1 ? cardSpacing : 0,
               top: (canTap) ? 0 : 15,
             ),
-            child: GestureDetector(
+            child: AnimatedCard(
+              card: card,
+              isBig: false,
+              isSelected: isSelected,
+              canTap: canTap,
               onTap: () => _onCardTap(card),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                transform: Matrix4.identity()..rotateZ(isSelected ? -0.05 : 0),
-                decoration: isSelected 
-                    ? BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.amber.withOpacity(0.8),
-                            blurRadius: 16,
-                            spreadRadius: 3,
-                          ),
-                        ],
-                      ) 
-                    : null,
-                child: Opacity(
-                  opacity: canTap ? 1.0 : 0.7,
-                  child: Stack(
-                    children: [
-                      _buildCardWidget(card, big: false),
-                      if (canRespond)
-                        Positioned(
-                          top: -5,
-                          right: -5,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              card.type == CardType.draw2 ? Icons.reply : Icons.color_lens,
-                              size: 16, 
-                              color: Colors.white
-                            ),
-                          ),
-                        ),
-                      if (isSelected)
-                        const Positioned(
-                          top: -5,
-                          left: -5,
-                          child: Icon(Icons.check_circle, color: Colors.amber, size: 22),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
             ),
           );
         }),
-      ),
-    );
-  }
-
-  Widget _buildCardWidget(UnoCard card, {bool big = false}) {
-    final w = big ? 100.0 : 85.0;
-    final h = big ? 145.0 : 120.0;
-    final isWild = card.color == CardColor.wild;
-    final isClear = card.type == CardType.clear;
-    final bgColor = card.displayColor;
-    final txtColor = (card.color == CardColor.yellow) ? Colors.black : Colors.white;
-    
-    String displayText = '';
-    switch (card.type) {
-      case CardType.number:
-        displayText = '${card.number}';
-        break;
-      case CardType.skip:
-        displayText = '⊘';
-        break;
-      case CardType.reverse:
-        displayText = '⟲';
-        break;
-      case CardType.draw2:
-        displayText = '+2';
-        break;
-      case CardType.wild:
-        displayText = 'W';
-        break;
-      case CardType.wildDraw4:
-        displayText = '+4';
-        break;
-      case CardType.wildDraw8:
-        displayText = '+8';
-        break;
-      case CardType.clear:
-        displayText = '🧹';
-        break;
-    }
-    
-    return Container(
-      width: w,
-      height: h,
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.5), width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.4),
-            blurRadius: 6,
-            offset: const Offset(2, 3),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          if (!isWild && !isClear)
-            Center(
-              child: Transform.rotate(
-                angle: -0.2,
-                child: Container(
-                  width: w * 0.65,
-                  height: h * 0.5,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(40),
-                  ),
-                ),
-              ),
-            ),
-          if (isClear)
-            Center(
-              child: Icon(
-                Icons.cleaning_services,
-                size: big ? 50 : 40,
-                color: Colors.white.withOpacity(0.3),
-              ),
-            ),
-          Center(
-            child: Text(
-              displayText,
-              style: TextStyle(
-                fontSize: big ? 44 : 32,
-                fontWeight: FontWeight.w900,
-                color: txtColor,
-                shadows: [
-                  Shadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 3,
-                    offset: const Offset(1, 1),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (card.type == CardType.number)
-            Positioned(
-              top: 6,
-              left: 10,
-              child: Text(
-                '${card.number}',
-                style: TextStyle(
-                  fontSize: big ? 18 : 14,
-                  fontWeight: FontWeight.w900,
-                  color: txtColor,
-                ),
-              ),
-            ),
-          if (isWild)
-            Positioned(
-              bottom: 0,
-              left: 4,
-              right: 4,
-              child: Container(
-                height: 6,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.red, Colors.yellow, Colors.green, Colors.blue],
-                  ),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(10),
-                    bottomRight: Radius.circular(10),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

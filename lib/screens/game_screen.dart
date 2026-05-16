@@ -918,6 +918,9 @@ class _GameScreenState extends State<GameScreen>
       if (_gameState.playerHands[nextPlayer]!.isEmpty) {
         _gameState.winner = nextPlayer;
       }
+      
+      // Ход остаётся у текущего игрока (кто сыграл +4/+8)
+      debugPrint('📥 Игрок $nextPlayer взял $drawCount карт, ход остаётся у ${_gameState.currentPlayer}');
     }
   }
 
@@ -1193,6 +1196,8 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     
+    final removedCount = toRemove.length;
+    
     for (var card in toRemove) {
       _gameState.playerHands[currentPlayer]!.removeWhere((c) => c.id == card.id);
       _gameState.discardPile.add(card);
@@ -1200,7 +1205,7 @@ class _GameScreenState extends State<GameScreen>
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('🧹 Вы сбросили ${toRemove.length} ${_colorName(color)} карт вместе с clear!'),
+        content: Text('🧹 Вы сбросили $removedCount ${_colorName(color)} карт вместе с clear!'),
         backgroundColor: _getColorForCard(color),
         duration: const Duration(seconds: 2),
       ));
@@ -1419,6 +1424,9 @@ class _GameScreenState extends State<GameScreen>
       _throwWildDraw(chosenCard);
       if (_gameState.pendingResponsePlayer == null) {
         // Ход остаётся у бота
+        debugPrint('🤖 Ход остаётся у бота $botName');
+      } else {
+        _gameState.nextTurn();
       }
     } else {
       _applyCardEffect(chosenCard);
@@ -1697,7 +1705,6 @@ class _GameScreenState extends State<GameScreen>
     });
     
     _gameState.chosenColor = color;
-    // Сразу выбрасываем карту
     _executePlayCard([card]);
   }
 
@@ -1759,14 +1766,12 @@ class _GameScreenState extends State<GameScreen>
       _gameState.nextTurn();
     } else if (lastCard.type == CardType.draw2) {
       _throwDrawTwo(lastCard);
-      _gameState.nextTurn();
     } else if (lastCard.type == CardType.wildDraw4 || lastCard.type == CardType.wildDraw8) {
       _throwWildDraw(lastCard);
-      if (_gameState.pendingResponsePlayer == null) {
-        // Ход остаётся у текущего игрока
-      } else {
+      if (_gameState.pendingResponsePlayer != null) {
         _gameState.nextTurn();
       }
+      // Если pendingResponsePlayer == null, ход остаётся у текущего игрока
     } else {
       _applyCardEffect(lastCard);
       if (lastCard.type == CardType.number) {

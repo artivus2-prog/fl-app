@@ -1263,23 +1263,26 @@ class _GameScreenState extends State<GameScreen>
     ));
   }
 
-  void _applyCardEffect(UnoCard card) {
-    switch (card.type) {
-      case CardType.skip:
+void _applyCardEffect(UnoCard card) {
+  switch (card.type) {
+    case CardType.skip:
+      _gameState.nextTurn();
+      break;
+    case CardType.reverse:
+      if (_gameState.playerCount == 2) {
+        // При 2 игроках reverse даёт ещё один ход текущему игроку
+        // Не вызываем nextTurn(), просто остаёмся
+        debugPrint('🔄 Reverse при 2 игроках: дополнительный ход для ${_gameState.currentPlayer}');
+        // Ничего не делаем - ход остаётся у текущего игрока
+      } else {
+        _gameState.isClockwise = !_gameState.isClockwise;
         _gameState.nextTurn();
-        break;
-      case CardType.reverse:
-        if (_gameState.playerCount == 2) {
-          // При 2 игроках reverse даёт ещё один ход текущему игроку
-        } else {
-          _gameState.isClockwise = !_gameState.isClockwise;
-          _gameState.nextTurn();
-        }
-        break;
-      default:
-        break;
-    }
+      }
+      break;
+    default:
+      break;
   }
+}
 
   void _botMove() {
     if (!mounted || !_isBotTurn || !widget.isHost) return;

@@ -39,11 +39,10 @@ class UnoCard {
       if (type == CardType.number) {
         return topCard.number == number;
       }
-      // skip, reverse - одинаковый тип
       return true;
     }
     
-    // 6. ДОБОРНЫЕ КАРТЫ: специальная логика
+    // 6. ДОБОРНЫЕ КАРТЫ
     final bool isTopDrawCard = topCard.type == CardType.draw2 ||
                                topCard.type == CardType.wildDraw4 ||
                                topCard.type == CardType.wildDraw8;
@@ -53,30 +52,23 @@ class UnoCard {
                               type == CardType.wildDraw8;
     
     if (isTopDrawCard && isMyDrawCard) {
-      // На +2 можно ответить ЛЮБОЙ доборной картой (+2, +4, +8)
       if (topCard.type == CardType.draw2) {
         return true;
       }
       
-      // На +4 (с выбранным цветом)
       if (topCard.type == CardType.wildDraw4) {
-        // +4 и +8 можно ответить всегда (любые цвета)
         if (type == CardType.wildDraw4 || type == CardType.wildDraw8) {
           return true;
         }
-        // +2 можно ответить ТОЛЬКО если цвет совпадает с выбранным
         if (type == CardType.draw2) {
           return chosenColor != null && color == chosenColor;
         }
       }
       
-      // На +8 (с выбранным цветом)
       if (topCard.type == CardType.wildDraw8) {
-        // +8 и +4 можно ответить всегда (любые цвета)
         if (type == CardType.wildDraw8 || type == CardType.wildDraw4) {
           return true;
         }
-        // +2 можно ответить ТОЛЬКО если цвет совпадает с выбранным
         if (type == CardType.draw2) {
           return chosenColor != null && color == chosenColor;
         }
@@ -87,12 +79,11 @@ class UnoCard {
   }
 
   // ========== ПРОВЕРКА МОЖНО ЛИ ОТВЕТИТЬ НА ДОБОР ==========
-  // ⭐ ИСПРАВЛЕНО по вашим правилам
   bool canRespondToDraw(CardColor? chosenColor, CardType attackCardType) {
     // Обычная Wild карта (W) НЕ может отвечать на добор!
     if (type == CardType.wild) return false;
     
-    // ===== НА +2 можно ответить ЛЮБОЙ доборной =====
+    // ===== НА +2 можно ответить ЛЮБОЙ доборной картой =====
     if (attackCardType == CardType.draw2) {
       if (type == CardType.draw2) return true;
       if (type == CardType.wildDraw4) return true;
@@ -101,10 +92,8 @@ class UnoCard {
     
     // ===== НА +4 (с выбранным цветом) =====
     if (attackCardType == CardType.wildDraw4) {
-      // +4 и +8 можно ответить всегда
       if (type == CardType.wildDraw4) return true;
       if (type == CardType.wildDraw8) return true;
-      // +2 можно ответить ТОЛЬКО если цвет совпадает
       if (type == CardType.draw2) {
         return chosenColor != null && color == chosenColor;
       }
@@ -112,10 +101,8 @@ class UnoCard {
     
     // ===== НА +8 (с выбранным цветом) =====
     if (attackCardType == CardType.wildDraw8) {
-      // +8 и +4 можно ответить всегда
       if (type == CardType.wildDraw8) return true;
       if (type == CardType.wildDraw4) return true;
-      // +2 можно ответить ТОЛЬКО если цвет совпадает
       if (type == CardType.draw2) {
         return chosenColor != null && color == chosenColor;
       }

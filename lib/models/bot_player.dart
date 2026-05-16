@@ -5,15 +5,30 @@ class BotPlayer {
   final Random _random = Random();
 
   UnoCard? chooseCard(List<UnoCard> hand, UnoCard topCard, CardColor? chosenColor) {
+    // Приоритет: ответ на добор с подходящим цветом
     if (chosenColor != null) {
       for (var card in hand) {
-        if ((card.type == CardType.draw2 || card.type == CardType.wildDraw4 || card.type == CardType.wildDraw8) && card.color == chosenColor) {
+        if (card.type == CardType.wildDraw8 && card.color == chosenColor) {
+          return card;
+        }
+      }
+      for (var card in hand) {
+        if (card.type == CardType.wildDraw4 && card.color == chosenColor) {
+          return card;
+        }
+      }
+      for (var card in hand) {
+        if (card.type == CardType.draw2 && card.color == chosenColor) {
           return card;
         }
       }
     }
+    
+    // Все играбельные карты
     List<UnoCard> playable = hand.where((c) => c.canPlayOn(topCard, chosenColor: chosenColor)).toList();
     if (playable.isEmpty) return null;
+    
+    // Группировка числовых карт для мульти-сброса
     Map<int, List<UnoCard>> numberGroups = {};
     for (var card in playable) {
       if (card.type == CardType.number) {
@@ -21,15 +36,20 @@ class BotPlayer {
         numberGroups[card.number!]!.add(card);
       }
     }
+    
+    // Приоритет: две одинаковые цифры
     for (var group in numberGroups.values) {
       if (group.length >= 2) return group.first;
     }
+    
+    // Приоритет карт: +8 > +4 > +2 > skip > reverse > wild
     for (var card in playable) { if (card.type == CardType.wildDraw8) return card; }
     for (var card in playable) { if (card.type == CardType.wildDraw4) return card; }
     for (var card in playable) { if (card.type == CardType.draw2) return card; }
     for (var card in playable) { if (card.type == CardType.skip) return card; }
     for (var card in playable) { if (card.type == CardType.reverse) return card; }
     for (var card in playable) { if (card.type == CardType.wild) return card; }
+    
     return playable.first;
   }
 

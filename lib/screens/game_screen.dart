@@ -632,8 +632,7 @@ class _GameScreenState extends State<GameScreen>
         ? (currentIndex - 1 + playerCount) % playerCount 
         : (currentIndex + 1) % playerCount;
   }
-
-  @override
+    @override
   void initState() {
     super.initState();
     SystemChrome.setPreferredOrientations([
@@ -891,7 +890,6 @@ class _GameScreenState extends State<GameScreen>
         _gameState.winner = nextPlayer;
       }
       
-      // Ход остаётся у текущего игрока (кто сыграл +2)
       debugPrint('📥 Игрок $nextPlayer взял 2 карты, ход остаётся у ${_gameState.currentPlayer}');
     }
   }
@@ -943,12 +941,12 @@ class _GameScreenState extends State<GameScreen>
         _gameState.winner = nextPlayer;
       }
       
-      // Ход остаётся у текущего игрока (кто сыграл +4/+8)
       debugPrint('📥 Игрок $nextPlayer взял $drawCount карт, ход остаётся у ${_gameState.currentPlayer}');
     }
   }
-
-  void _respondToPending(UnoCard card) {
+    void _respondToPending(UnoCard card) {
+    debugPrint('🎯 _respondToPending: ${card.type} ${card.color}');
+    
     _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == card.id);
     _gameState.discardPile.add(card);
     
@@ -1052,7 +1050,7 @@ class _GameScreenState extends State<GameScreen>
     if (_isResponseColorPickerShowing) return;
     if (_choosingResponseColor) return;
     if (!mounted) return;
-    if (widget.playerName.startsWith('Бot')) return;
+    if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
       _choosingResponseColor = true;
@@ -1340,8 +1338,7 @@ class _GameScreenState extends State<GameScreen>
     _updateTurn();
     _broadcastState();
   }
-
-  void _applyClearCardEffect(CardColor color) {
+    void _applyClearCardEffect(CardColor color) {
     final currentPlayer = _gameState.currentPlayer;
     final hand = _gameState.playerHands[currentPlayer] ?? [];
     final toRemove = hand.where((c) => c.color == color).toList();
@@ -1573,6 +1570,7 @@ class _GameScreenState extends State<GameScreen>
 
     if (chosenCard.color == CardColor.wild && chosenCard.type != CardType.wild) {
       _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
+      debugPrint('🤖 Бот выбрал цвет: ${_gameState.chosenColor} для ${chosenCard.type}');
     }
 
     if (chosenCard.type == CardType.clear) {
@@ -1696,18 +1694,27 @@ class _GameScreenState extends State<GameScreen>
       _selectedCardIds.clear();
     });
   }
-
-  void _onCardTap(UnoCard card) {
+    void _onCardTap(UnoCard card) {
     if (!_gameStarted) return;
     
     final isMyPending = _gameState.pendingResponsePlayer == widget.playerName;
     
+    // ⭐ ПРОВЕРКА: можем ли ответить на добор
     bool canRespond = false;
-    if (isMyPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
-      canRespond = card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
+    if (isMyPending && _gameState.pendingAttackCardType != null) {
+      // Для ответа на +2 не нужен chosenColor!
+      if (_gameState.pendingAttackCardType == CardType.draw2) {
+        canRespond = card.canRespondToDraw(null, CardType.draw2);
+        debugPrint('🔍 Ответ на +2: ${card.type} ${card.color} -> canRespond=$canRespond');
+      } else {
+        canRespond = _gameState.chosenColor != null && 
+            card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
+        debugPrint('🔍 Ответ на ${_gameState.pendingAttackCardType}: ${card.type} ${card.color} -> canRespond=$canRespond');
+      }
     }
     
     if (canRespond) { 
+      debugPrint('✅ Ответ на добор картой: ${card.type} ${card.color}');
       _respondToPending(card); 
       return; 
     }
@@ -2057,8 +2064,7 @@ class _GameScreenState extends State<GameScreen>
       ),
     );
   }
-
-  // ========== BUILD ==========
+    // ========== BUILD ==========
 
   @override
   Widget build(BuildContext context) {
@@ -2601,11 +2607,19 @@ class _GameScreenState extends State<GameScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: List.generate(totalCards, (i) {
           final card = myHand[i];
-          final canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
           
+          // Обычный ход
+          bool canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
+          
+          // ⭐ Ответ на добор
           bool canRespond = false;
-          if (isPending && _gameState.chosenColor != null && _gameState.pendingAttackCardType != null) {
-            canRespond = card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
+          if (isPending && _gameState.pendingAttackCardType != null) {
+            if (_gameState.pendingAttackCardType == CardType.draw2) {
+              canRespond = card.canRespondToDraw(null, CardType.draw2);
+            } else {
+              canRespond = _gameState.chosenColor != null && 
+                  card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
+            }
           }
           
           final isSelected = _selectedCardIds.contains(card.id);

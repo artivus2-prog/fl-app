@@ -1338,7 +1338,8 @@ class _GameScreenState extends State<GameScreen>
     _updateTurn();
     _broadcastState();
   }
-    void _applyClearCardEffect(CardColor color) {
+
+  void _applyClearCardEffect(CardColor color) {
     final currentPlayer = _gameState.currentPlayer;
     final hand = _gameState.playerHands[currentPlayer] ?? [];
     final toRemove = hand.where((c) => c.color == color).toList();
@@ -1422,42 +1423,7 @@ class _GameScreenState extends State<GameScreen>
       duration: Duration(seconds: 1),
     ));
   }
-
-  void _applyCardEffect(UnoCard card) {
-    switch (card.type) {
-      case CardType.skip:
-        // Skip при 2 игроках: дополнительный ход текущему игроку
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⏭️ Пропуск хода соперника! Вы ходите ещё раз!'),
-              duration: Duration(seconds: 1),
-            ),
-          );
-        }
-        break;
-      case CardType.reverse:
-        if (_gameState.playerCount == 2) {
-          // Reverse = Skip при 2 игроках
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('🔄 Реверс! Вы ходите ещё раз!'),
-                duration: Duration(seconds: 1),
-              ),
-            );
-          }
-        } else {
-          _gameState.isClockwise = !_gameState.isClockwise;
-          _gameState.nextTurn();
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
-  void _botMove() {
+    void _botMove() {
     if (!mounted || !_isBotTurn || !widget.isHost) return;
     final botName = _gameState.currentPlayer;
     final botHand = _gameState.currentHand(botName);
@@ -1592,11 +1558,33 @@ class _GameScreenState extends State<GameScreen>
       } else {
         _gameState.nextTurn();
       }
-    } else {
-      _applyCardEffect(chosenCard);
-      if (chosenCard.type == CardType.number) {
+    } else if (chosenCard.type == CardType.skip) {
+      // Skip - дополнительный ход
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⏭️ Пропуск хода соперника! Бот ходит ещё раз!'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+      // Ход остаётся у бота
+    } else if (chosenCard.type == CardType.reverse) {
+      if (_gameState.playerCount == 2) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🔄 Реверс! Бот ходит ещё раз!'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+      } else {
+        _gameState.isClockwise = !_gameState.isClockwise;
         _gameState.nextTurn();
       }
+    } else if (chosenCard.type == CardType.number) {
+      _gameState.nextTurn();
     }
 
     if (_gameState.playerHands[botName]!.isEmpty) _gameState.winner = botName;
@@ -1694,36 +1682,86 @@ class _GameScreenState extends State<GameScreen>
       _selectedCardIds.clear();
     });
   }
-void _onCardTap(UnoCard card) {
-  if (!_gameStarted) return;
-  
-  final isMyPending = _gameState.pendingResponsePlayer == widget.playerName;
-  
-  // Проверка: можем ли ответить на добор
-  bool canRespond = false;
-  if (isMyPending && _gameState.pendingAttackCardType != null) {
-    if (_gameState.pendingAttackCardType == CardType.draw2) {
-      canRespond = card.canRespondToDraw(null, CardType.draw2);
-    } else {
-      canRespond = _gameState.chosenColor != null && 
-          card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
-    }
-  }
-  
-  if (canRespond) { 
-    _respondToPending(card); 
-    return; 
-  }
-  
-  if (!_isMyTurn) return;
 
-  bool canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
-  if (!canPlay) return;
-  
-  // Двойной тап для быстрого сброса (только для НЕ Wild карт)
-  if (_lastTappedCardId == card.id && canPlay && card.color != CardColor.wild) {
-    _lastTapTimer?.cancel(); 
-    _lastTappedCardId = null;
+  void _onCardTap(UnoCard card) {
+    if (!_gameStarted) return;
+    
+    final isMyPending = _gameState.pendingResponsePlayer == widget.playerName;
+    
+    // Проверка: можем ли ответить на добор
+    bool canRespond = false;
+    if (isMyPending && _gameState.pendingAttackCardType != null) {
+      if (_gameState.pendingAttackCardType == CardType.draw2) {
+        canRespond = card.canRespondToDraw(null, CardType.draw2);
+      } else {
+        canRespond = _gameState.chosenColor != null && 
+            card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
+      }
+    }
+    
+    if (canRespond) { 
+      _respondToPending(card); 
+      return; 
+    }
+    
+    if (!_isMyTurn) return;
+
+    bool canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
+    if (!canPlay) return;
+    
+    // Двойной тап для быстрого сброса (только для НЕ Wild карт)
+    if (_lastTappedCardId == card.id && canPlay && card.color != CardColor.wild) {
+      _lastTapTimer?.cancel(); 
+      _lastTappedCardId = null;
+      if (_multiSelectMode) {
+        setState(() {
+          _multiSelectMode = false;
+          _selectedCardIds.clear();
+        });
+      }
+      _executePlayCard([card]);
+      return;
+    }
+    
+    _lastTappedCardId = card.id;
+    _lastTapTimer?.cancel();
+    _lastTapTimer = Timer(const Duration(milliseconds: 350), () { 
+      _lastTappedCardId = null; 
+    });
+    
+    // Дикие карты - показываем выбор цвета
+    if (card.color == CardColor.wild) {
+      if (widget.playerName.startsWith('Бот')) {
+        _gameState.chosenColor = _bot.chooseColor(_gameState.currentHand(widget.playerName));
+        _executePlayCard([card]);
+      } else {
+        _showColorPickerForCard(card);
+      }
+      return;
+    }
+    
+    // Skip и Reverse - сразу сбрасываем
+    if (card.type == CardType.skip || card.type == CardType.reverse) {
+      _executePlayCard([card]);
+      return;
+    }
+    
+    // Числовые карты - проверка мульти-сброса
+    if (card.type == CardType.number) {
+      final sameNumberCards = _getSameNumberCards(card.number!);
+      if (sameNumberCards.length >= 2) {
+        setState(() {
+          _multiSelectMode = true;
+          if (_selectedCardIds.contains(card.id)) {
+            _selectedCardIds.remove(card.id);
+          } else {
+            _selectedCardIds.add(card.id);
+          }
+        });
+        return;
+      }
+    }
+    
     if (_multiSelectMode) {
       setState(() {
         _multiSelectMode = false;
@@ -1731,135 +1769,81 @@ void _onCardTap(UnoCard card) {
       });
     }
     _executePlayCard([card]);
-    return;
-    // ⭐ ВАЖНО: для Wild карт не делаем двойной тап, а показываем выбор цвета
   }
-  
-  _lastTappedCardId = card.id;
-  _lastTapTimer?.cancel();
-  _lastTapTimer = Timer(const Duration(milliseconds: 350), () { 
-    _lastTappedCardId = null; 
-  });
-  
-  // ⭐ ДИКИЕ КАРТЫ (W, +4, +8) - показываем выбор цвета
-  if (card.color == CardColor.wild) {
-    debugPrint('🎨 Дикая карта: ${card.type}, показываем выбор цвета');
-    if (widget.playerName.startsWith('Бот')) {
-      _gameState.chosenColor = _bot.chooseColor(_gameState.currentHand(widget.playerName));
-      _executePlayCard([card]);
-    } else {
-      _showColorPickerForCard(card);
-    }
-    return;
+    void _showColorPickerForCard(UnoCard card) {
+    if (_isColorPickerShowing) return;
+    if (_choosingColor) return;
+    
+    setState(() {
+      _choosingColor = true;
+      _pendingWildCard = card;
+    });
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _choosingColor && _pendingWildCard != null) {
+        _showColorPicker();
+      }
+    });
   }
-  
-  // Числовые карты - проверка мульти-сброса
-  if (card.type == CardType.number) {
-    final sameNumberCards = _getSameNumberCards(card.number!);
-    if (sameNumberCards.length >= 2) {
+
+  void _showColorPicker() {
+    if (!_choosingColor || _isColorPickerShowing) return;
+    if (_pendingWildCard == null) {
       setState(() {
-        _multiSelectMode = true;
-        if (_selectedCardIds.contains(card.id)) {
-          _selectedCardIds.remove(card.id);
-        } else {
-          _selectedCardIds.add(card.id);
-        }
+        _choosingColor = false;
+        _isColorPickerShowing = false;
       });
       return;
     }
-  }
-  
-  if (_multiSelectMode) {
-    setState(() {
-      _multiSelectMode = false;
-      _selectedCardIds.clear();
-    });
-  }
-  _executePlayCard([card]);
-}
-
-void _showColorPickerForCard(UnoCard card) {
-  debugPrint('🎨 _showColorPickerForCard: ${card.type}');
-  
-  if (_isColorPickerShowing) return;
-  if (_choosingColor) return;
-  
-  setState(() {
-    _choosingColor = true;
-    _pendingWildCard = card;
-  });
-  
-  // Используем Future.delayed чтобы убедиться что состояние обновилось
-  Future.delayed(Duration.zero, () {
-    if (mounted && _choosingColor && _pendingWildCard != null) {
-      _showColorPicker();
-    }
-  });
-}
-void _showColorPicker() {
-  debugPrint('🎨 _showColorPicker вызван');
-  
-  if (!_choosingColor || _isColorPickerShowing) return;
-  if (_pendingWildCard == null) {
-    debugPrint('⚠️ _pendingWildCard == null, отмена');
-    setState(() {
-      _choosingColor = false;
-      _isColorPickerShowing = false;
-    });
-    return;
-  }
-  
-  debugPrint('🎨 Показываем диалог выбора цвета для карты: ${_pendingWildCard!.type}');
-  _isColorPickerShowing = true;
-  
-  showDialog(
-    context: context, 
-    barrierDismissible: false,
-    builder: (ctx) => WillPopScope(
-      onWillPop: () async {
-        debugPrint('⚠️ Диалог закрыт принудительно');
-        _cancelColorPick();
-        return false;
-      },
-      child: AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Row(
-          children: [
-            Icon(Icons.color_lens, color: Colors.purple, size: 28), 
-            SizedBox(width: 12),
-            Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min, 
-          children: [
-            const Text(
-              'Дикая карта — выберите следующий цвет:', 
-              style: TextStyle(color: Colors.grey, fontSize: 14)
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
-              children: [
-                _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx, _onColorChosen),
-                _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx, _onColorChosen),
-                _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx, _onColorChosen),
-                _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx, _onColorChosen),
-              ],
-            ),
-          ],
+    
+    _isColorPickerShowing = true;
+    
+    showDialog(
+      context: context, 
+      barrierDismissible: false,
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async {
+          _cancelColorPick();
+          return false;
+        },
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: const Row(
+            children: [
+              Icon(Icons.color_lens, color: Colors.purple, size: 28), 
+              SizedBox(width: 12),
+              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20))
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min, 
+            children: [
+              const Text(
+                'Дикая карта — выберите следующий цвет:', 
+                style: TextStyle(color: Colors.grey, fontSize: 14)
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly, 
+                children: [
+                  _buildColorOption(CardColor.red, 'Красный', Colors.red, ctx, _onColorChosen),
+                  _buildColorOption(CardColor.blue, 'Синий', Colors.blue, ctx, _onColorChosen),
+                  _buildColorOption(CardColor.green, 'Зелёный', Colors.green, ctx, _onColorChosen),
+                  _buildColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx, _onColorChosen),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  ).then((_) {
-    debugPrint('🎨 Диалог закрыт');
-    if (mounted && _choosingColor) {
-      _cancelColorPick();
-    }
-    _isColorPickerShowing = false;
-  });
-}
+    ).then((_) {
+      if (mounted && _choosingColor) {
+        _cancelColorPick();
+      }
+      _isColorPickerShowing = false;
+    });
+  }
 
   void _cancelColorPick() {
     if (mounted) {
@@ -1870,26 +1854,22 @@ void _showColorPicker() {
     }
   }
 
-void _onColorChosen(CardColor color) {
-  debugPrint('🎨 _onColorChosen: $color');
-  
-  if (_pendingWildCard == null) {
-    debugPrint('⚠️ _pendingWildCard == null, отмена');
-    _cancelColorPick();
-    return;
+  void _onColorChosen(CardColor color) {
+    if (_pendingWildCard == null) {
+      _cancelColorPick();
+      return;
+    }
+    
+    final card = _pendingWildCard!;
+    
+    setState(() {
+      _choosingColor = false;
+      _pendingWildCard = null;
+    });
+    
+    _gameState.chosenColor = color;
+    _executePlayCard([card]);
   }
-  
-  final card = _pendingWildCard!;
-  
-  setState(() {
-    _choosingColor = false;
-    _pendingWildCard = null;
-  });
-  
-  _gameState.chosenColor = color;
-  debugPrint('🎨 Установлен цвет: $_gameState.chosenColor, выбрасываем карту ${card.type}');
-  _executePlayCard([card]);
-}
 
   void _executePlayCard(List<UnoCard> cards) async {
     if (cards.isEmpty || _isAnimating) return;
@@ -1916,11 +1896,13 @@ void _onColorChosen(CardColor color) {
     final sortedCards = List<UnoCard>.from(cards);
     final handBefore = _gameState.currentHand(widget.playerName).length;
     
+    // Удаляем карты из руки
     for (var card in sortedCards) {
       _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == card.id);
       await Future.delayed(const Duration(milliseconds: 50));
     }
     
+    // Добавляем карты в сброс
     _gameState.discardPile.add(lastCard);
     
     for (int i = 0; i < sortedCards.length - 1; i++) {
@@ -1929,12 +1911,14 @@ void _onColorChosen(CardColor color) {
     
     final handAfter = _gameState.currentHand(widget.playerName).length;
     
+    // Проверка на УНО
     if (handBefore == cards.length + 1 && handAfter == 1 && !_unoPressed && _gameState.pendingResponsePlayer == null) {
       _needUnoButton = true;
       _pulseController.repeat(reverse: true);
       _startUnoTimer();
     }
     
+    // Проверка на победу
     if (handAfter == 0) {
       _gameState.winner = widget.playerName;
       _updateTurn();
@@ -1944,26 +1928,64 @@ void _onColorChosen(CardColor color) {
       return;
     }
     
-    if (lastCard.type == CardType.clear) {
-      _applyClearCardEffect(lastCard.color);
-      _gameState.nextTurn();
-    } else if (lastCard.type == CardType.draw2) {
-      _throwDrawTwo(lastCard);
-      if (_gameState.pendingResponsePlayer == null) {
+    // Применяем эффект карты
+    switch (lastCard.type) {
+      case CardType.clear:
+        _applyClearCardEffect(lastCard.color);
         _gameState.nextTurn();
-      }
-    } else if (lastCard.type == CardType.wildDraw4 || lastCard.type == CardType.wildDraw8) {
-      _throwWildDraw(lastCard);
-      if (_gameState.pendingResponsePlayer != null) {
+        break;
+        
+      case CardType.draw2:
+        _throwDrawTwo(lastCard);
+        if (_gameState.pendingResponsePlayer == null) {
+          _gameState.nextTurn();
+        }
+        break;
+        
+      case CardType.wildDraw4:
+      case CardType.wildDraw8:
+        _throwWildDraw(lastCard);
+        if (_gameState.pendingResponsePlayer != null) {
+          _gameState.nextTurn();
+        }
+        break;
+        
+      case CardType.skip:
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⏭️ Пропуск хода соперника! Вы ходите ещё раз!'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+        // Ход остаётся у текущего игрока
+        break;
+        
+      case CardType.reverse:
+        if (_gameState.playerCount == 2) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🔄 Реверс! Вы ходите ещё раз!'),
+                duration: Duration(seconds: 1),
+              ),
+            );
+          }
+          // Ход остаётся у текущего игрока
+        } else {
+          _gameState.isClockwise = !_gameState.isClockwise;
+          _gameState.nextTurn();
+        }
+        break;
+        
+      case CardType.number:
         _gameState.nextTurn();
-      }
-      // Если ответа нет - ход остаётся у текущего игрока
-    } else {
-      _applyCardEffect(lastCard);
-      if (lastCard.type == CardType.number) {
+        break;
+        
+      default:
         _gameState.nextTurn();
-      }
-      // Skip и Reverse - ход остаётся у текущего
+        break;
     }
     
     _updateTurn();
@@ -2041,40 +2063,39 @@ void _onColorChosen(CardColor color) {
     );
   }
 
-Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildContext ctx, Function(CardColor) onSelected) {
-  return GestureDetector(
-    onTap: () {
-      debugPrint('🎨 Выбран цвет: $label');
-      Navigator.of(ctx).pop();
-      onSelected(color);
-    },
-    child: Column(
-      children: [
-        Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            color: bgColor,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: bgColor.withOpacity(0.5),
-                blurRadius: 10,
-                spreadRadius: 2,
-              ),
-            ],
+  Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildContext ctx, Function(CardColor) onSelected) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(ctx).pop();
+        onSelected(color);
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: bgColor.withOpacity(0.5),
+                  blurRadius: 10,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-        ),
-      ],
-    ),
-  );
-}
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
     // ========== BUILD ==========
 
   @override
@@ -2121,23 +2142,6 @@ Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildCont
                           _buildDiscardPile(),
                         ],
                       ),
-                      if (_multiSelectMode && _selectedCardIds.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: ElevatedButton.icon(
-                            onPressed: _selectedCardIds.length >= 2 ? _confirmMultiPlay : null,
-                            icon: const Icon(Icons.send),
-                            label: Text('Сбросить ${_selectedCardIds.length} карт (номер ${_getSelectedNumber()})'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -2229,7 +2233,7 @@ Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildCont
     final isPending = _gameState.pendingResponsePlayer == widget.playerName;
     
     return Container(
-      height: 160,
+      height: 200,
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.2),
         borderRadius: const BorderRadius.only(
@@ -2262,18 +2266,6 @@ Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildCont
                   ),
                 ),
                 const Spacer(),
-                if (_multiSelectMode && _selectedCardIds.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      'Сброс: ${_selectedCardIds.length} карт (номер ${_getSelectedNumber()})',
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
-                    ),
-                  ),
                 if (_gameState.pendingResponsePlayer == widget.playerName)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -2301,6 +2293,32 @@ Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildCont
               ],
             ),
           ),
+          
+          // Кнопка мульти-сброса справа
+          if (_multiSelectMode && _selectedCardIds.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _selectedCardIds.length >= 2 ? _confirmMultiPlay : null,
+                    icon: const Icon(Icons.send, size: 18),
+                    label: Text('Сбросить ${_selectedCardIds.length} карт (${_getSelectedNumber()})'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
           Expanded(
             child: _buildPlayerHand(myHand, isPending),
           ),
@@ -2622,7 +2640,7 @@ Widget _buildColorOption(CardColor color, String label, Color bgColor, BuildCont
           // Обычный ход
           bool canPlay = _isMyTurn && card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
           
-          // ⭐ Ответ на добор
+          // Ответ на добор
           bool canRespond = false;
           if (isPending && _gameState.pendingAttackCardType != null) {
             if (_gameState.pendingAttackCardType == CardType.draw2) {

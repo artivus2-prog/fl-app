@@ -16,25 +16,19 @@ class UnoCard {
     this.number,
   }) : id = '${color.name}_${type.name}_${number ?? ""}_${Random().nextInt(10000)}';
 
-  // ========== ПРОВЕРКА ХОДА ==========
   bool canPlayOn(UnoCard topCard, {CardColor? chosenColor}) {
-    // 1. Дикие карты (W, +4, +8) всегда можно сыграть на любую карту
     if (color == CardColor.wild) return true;
     
-    // 2. Clear: можно на свой цвет или на другую clear
     if (type == CardType.clear) {
       return topCard.color == color || topCard.type == CardType.clear;
     }
     
-    // 3. Совпадение по цвету
     if (topCard.color == color) return true;
     
-    // 4. Если верхняя карта - дикая, используем выбранный цвет
     if (topCard.color == CardColor.wild && chosenColor != null && chosenColor == color) {
       return true;
     }
     
-    // 5. Совпадение по типу (число, пропуск, реверс)
     if (topCard.type == type) {
       if (type == CardType.number) {
         return topCard.number == number;
@@ -42,7 +36,6 @@ class UnoCard {
       return true;
     }
     
-    // 6. ДОБОРНЫЕ КАРТЫ
     final bool isTopDrawCard = topCard.type == CardType.draw2 ||
                                topCard.type == CardType.wildDraw4 ||
                                topCard.type == CardType.wildDraw8;
@@ -78,19 +71,15 @@ class UnoCard {
     return false;
   }
 
-  // ========== ПРОВЕРКА МОЖНО ЛИ ОТВЕТИТЬ НА ДОБОР ==========
   bool canRespondToDraw(CardColor? chosenColor, CardType attackCardType) {
-    // Обычная Wild карта (W) НЕ может отвечать на добор!
     if (type == CardType.wild) return false;
     
-    // ===== НА +2 можно ответить ЛЮБОЙ доборной картой =====
     if (attackCardType == CardType.draw2) {
       if (type == CardType.draw2) return true;
       if (type == CardType.wildDraw4) return true;
       if (type == CardType.wildDraw8) return true;
     }
     
-    // ===== НА +4 (с выбранным цветом) =====
     if (attackCardType == CardType.wildDraw4) {
       if (type == CardType.wildDraw4) return true;
       if (type == CardType.wildDraw8) return true;
@@ -99,7 +88,6 @@ class UnoCard {
       }
     }
     
-    // ===== НА +8 (с выбранным цветом) =====
     if (attackCardType == CardType.wildDraw8) {
       if (type == CardType.wildDraw8) return true;
       if (type == CardType.wildDraw4) return true;

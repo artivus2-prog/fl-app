@@ -58,6 +58,10 @@ class GameServer {
   Function(String)? onDisconnected;
   Function(List<String>)? onPlayerListChanged;
   
+  // Для хоста - список клиентов
+  final List<WebSocket> _clients = [];
+  bool _isHost = false;
+  
   bool get isConnected => _socket != null;
   List<String> get players => List.unmodifiable(_players);
   String get playerName => _playerName;
@@ -77,12 +81,12 @@ class GameServer {
   Future<bool> createRoom(String playerName) async {
     _playerName = playerName;
     _connectionId = _generateClientId();
+    _isHost = true;
     
     try {
       _socket = await WebSocket.connect('ws://95.183.11.203:6000/ws/$_connectionId');
       _socket!.listen(_handleMessage, onDone: _handleDisconnect, onError: _handleError);
       
-      // Отправляем запрос на создание комнаты
       _send({
         'type': 'create_room',
         'playerName': playerName,
@@ -100,12 +104,12 @@ class GameServer {
     _playerName = playerName;
     _roomId = roomId;
     _connectionId = _generateClientId();
+    _isHost = false;
     
     try {
       _socket = await WebSocket.connect('ws://95.183.11.203:6000/ws/$_connectionId');
       _socket!.listen(_handleMessage, onDone: _handleDisconnect, onError: _handleError);
       
-      // Отправляем запрос на подключение к комнате
       _send({
         'type': 'join_room',
         'roomId': roomId,
@@ -117,6 +121,19 @@ class GameServer {
       debugPrint('❌ Ошибка подключения: $e');
       return false;
     }
+  }
+  
+  // Отправить сообщение всем (только для хоста)
+  void broadcastAll(GameMessage message) {
+    if (_isHost) {
+      // Хост рассылает всем клиентам
+      final json = message.toJson();
+      for (var client in _clients) {
+        client.add(json);
+      }
+    }
+    // Также отправляем себе
+    if (onMessage != null) onMessage!(message);
   }
   
   // Начать игру (только для хоста)
@@ -225,6 +242,7 @@ class GameServer {
           
         case 'error':
           debugPrint('❌ Ошибка сервера: ${json['message']}');
+          if (onDisconnected != null) onDisconnected!(json['message']);
           break;
           
         case 'pong':
@@ -254,6 +272,7 @@ class GameServer {
   void _closeSocket() {
     _socket?.close();
     _socket = null;
+    _clients.clear();
   }
   
   void stop() {

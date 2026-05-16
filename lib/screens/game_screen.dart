@@ -8,7 +8,7 @@ import '../models/bot_player.dart';
 import '../services/game_server.dart';
 import 'settings_screen.dart';
 
-// ========== АНИМИРОВАННЫЕ КОМПОНЕНТЫ (оставляем без изменений) ==========
+// ========== АНИМИРОВАННЫЕ КОМПОНЕНТЫ ==========
 
 class AnimatedCard extends StatefulWidget {
   final UnoCard card;
@@ -877,6 +877,11 @@ class _GameScreenState extends State<GameScreen>
     final isDraw8 = card.type == CardType.wildDraw8;
     final baseDraw = isDraw8 ? 8 : 4;
     
+    if (_gameState.chosenColor == null) {
+      debugPrint('❌ ОШИБКА: цвет не выбран для +4/+8!');
+      return;
+    }
+    
     final nextIndex = _getNextPlayerIndex(
       _gameState.currentPlayerIndex, 
       _gameState.isClockwise, 
@@ -886,9 +891,7 @@ class _GameScreenState extends State<GameScreen>
     final nextHand = _gameState.playerHands[nextPlayer] ?? [];
     final chosenColor = _gameState.chosenColor;
     
-    if (chosenColor == null) return;
-    
-    final canRespond = _canRespondToDraw(nextPlayer, chosenColor, card.type);
+    final canRespond = _canRespondToDraw(nextPlayer, chosenColor!, card.type);
     final onlyOneCard = canRespond && nextHand.length == 1;
     
     if (onlyOneCard) {
@@ -911,10 +914,10 @@ class _GameScreenState extends State<GameScreen>
       _gameState.pendingResponsePlayer = null;
       _gameState.pendingDrawCount = 0;
       _gameState.pendingAttackCardType = null;
+      
       if (_gameState.playerHands[nextPlayer]!.isEmpty) {
         _gameState.winner = nextPlayer;
       }
-      _gameState.nextTurn();
     }
   }
 
@@ -943,7 +946,6 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
-      // ⭐ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: для ботов не показываем диалог
       if (widget.playerName.startsWith('Бот')) {
         final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
         _onResponseColorChosenForBot(newColor);
@@ -955,8 +957,6 @@ class _GameScreenState extends State<GameScreen>
 
   void _onResponseColorChosenForBot(CardColor color) {
     if (_pendingResponseCard == null) return;
-    
-    debugPrint('Бот выбрал цвет: $color для ответа на +4/+8');
     
     final card = _pendingResponseCard!;
     final isDraw8 = card.type == CardType.wildDraw8;
@@ -1001,7 +1001,6 @@ class _GameScreenState extends State<GameScreen>
     if (_choosingResponseColor) return;
     if (!mounted) return;
     
-    // ⭐ НЕ ПОКАЗЫВАЕМ диалог для ботов!
     if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
@@ -1136,8 +1135,6 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     
-    debugPrint('Выбран цвет: $color для ответа на +4/+8');
-    
     final card = _pendingResponseCard!;
     final isDraw8 = card.type == CardType.wildDraw8;
     final baseDraw = isDraw8 ? 8 : 4;
@@ -1269,7 +1266,6 @@ class _GameScreenState extends State<GameScreen>
       case CardType.reverse:
         if (_gameState.playerCount == 2) {
           // При 2 игроках reverse даёт ещё один ход текущему игроку
-          // Не меняем индекс
         } else {
           _gameState.isClockwise = !_gameState.isClockwise;
           _gameState.nextTurn();
@@ -1363,8 +1359,8 @@ class _GameScreenState extends State<GameScreen>
                 _gameState.pendingResponsePlayer = null;
                 _gameState.pendingDrawCount = 0;
                 _gameState.pendingAttackCardType = null;
+                _gameState.nextTurn();
               }
-              _gameState.nextTurn();
             }
             
             setState(() => _updateTurn());
@@ -1406,7 +1402,6 @@ class _GameScreenState extends State<GameScreen>
       _applyBotUnoPenalty(botName);
     }
 
-    // ⭐ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: для диких карт бот выбирает цвет без диалога
     if (chosenCard.color == CardColor.wild && chosenCard.type != CardType.wild) {
       _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
     }
@@ -1422,7 +1417,9 @@ class _GameScreenState extends State<GameScreen>
         _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
       }
       _throwWildDraw(chosenCard);
-      if (_gameState.pendingResponsePlayer == null) _gameState.nextTurn();
+      if (_gameState.pendingResponsePlayer == null) {
+        // Ход остаётся у бота
+      }
     } else {
       _applyCardEffect(chosenCard);
       if (chosenCard.type == CardType.number) {
@@ -1546,7 +1543,8 @@ class _GameScreenState extends State<GameScreen>
     bool canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
     if (!canPlay) return;
     
-    if (_lastTappedCardId == card.id && canPlay) {
+    // Двойной тап для быстрого сброса (только для НЕ Wild карт)
+    if (_lastTappedCardId == card.id && canPlay && card.color != CardColor.wild) {
       _lastTapTimer?.cancel(); 
       _lastTappedCardId = null;
       if (_multiSelectMode) {
@@ -1555,17 +1553,7 @@ class _GameScreenState extends State<GameScreen>
           _selectedCardIds.clear();
         });
       }
-      if (card.color == CardColor.wild && card.type != CardType.wild) {
-        // ⭐ Для ботов не показываем диалог выбора цвета
-        if (widget.playerName.startsWith('Бот')) {
-          _gameState.chosenColor = _bot.chooseColor(_gameState.currentHand(widget.playerName));
-          _executePlayCard([card]);
-        } else {
-          _showColorPickerForCard(card);
-        }
-      } else {
-        _executePlayCard([card]);
-      }
+      _executePlayCard([card]);
       return;
     }
     
@@ -1575,8 +1563,8 @@ class _GameScreenState extends State<GameScreen>
       _lastTappedCardId = null; 
     });
     
+    // Дикие карты - показываем выбор цвета
     if (card.color == CardColor.wild && card.type != CardType.wild) {
-      // ⭐ Для ботов не показываем диалог выбора цвета
       if (widget.playerName.startsWith('Бот')) {
         _gameState.chosenColor = _bot.chooseColor(_gameState.currentHand(widget.playerName));
         _executePlayCard([card]);
@@ -1586,6 +1574,7 @@ class _GameScreenState extends State<GameScreen>
       return;
     }
     
+    // Числовые карты - проверка мульти-сброса
     if (card.type == CardType.number) {
       final sameNumberCards = _getSameNumberCards(card.number!);
       if (sameNumberCards.length >= 2) {
@@ -1708,6 +1697,7 @@ class _GameScreenState extends State<GameScreen>
     });
     
     _gameState.chosenColor = color;
+    // Сразу выбрасываем карту
     _executePlayCard([card]);
   }
 
@@ -1721,8 +1711,12 @@ class _GameScreenState extends State<GameScreen>
          lastCard.type == CardType.wildDraw8 ||
          lastCard.type == CardType.wild) && 
         _gameState.chosenColor == null) {
-      debugPrint('❌ Ошибка: цвет не выбран для Wild карты!');
-      return;
+      debugPrint('❌ ОШИБКА: цвет не выбран для Wild карты!');
+      if (widget.playerName.startsWith('Бот')) {
+        _gameState.chosenColor = _bot.chooseColor(_gameState.currentHand(widget.playerName));
+      } else {
+        return;
+      }
     }
     
     _isAnimating = true;
@@ -1768,7 +1762,11 @@ class _GameScreenState extends State<GameScreen>
       _gameState.nextTurn();
     } else if (lastCard.type == CardType.wildDraw4 || lastCard.type == CardType.wildDraw8) {
       _throwWildDraw(lastCard);
-      if (_gameState.pendingResponsePlayer == null) _gameState.nextTurn();
+      if (_gameState.pendingResponsePlayer == null) {
+        // Ход остаётся у текущего игрока
+      } else {
+        _gameState.nextTurn();
+      }
     } else {
       _applyCardEffect(lastCard);
       if (lastCard.type == CardType.number) {

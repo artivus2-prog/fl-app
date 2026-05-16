@@ -1,5 +1,3 @@
-Вот полный исправленный файл `game_screen.dart` с корректной логикой для 2 игроков и цепочек доборов:
-
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -138,7 +136,7 @@ class _AnimatedCardState extends State<AnimatedCard> with SingleTickerProviderSt
         displayText = '+2';
         break;
       case CardType.wild:
-        displayText = 'ЦВЕТ';
+        displayText = 'W';
         break;
       case CardType.wildDraw4:
         displayText = '+4';

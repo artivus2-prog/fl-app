@@ -613,6 +613,26 @@ class _GameScreenState extends State<GameScreen>
         .any((c) => c.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor));
   }
 
+  // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ 2 ИГРОКОВ ==========
+  
+  int _getNextPlayerIndex(int currentIndex, bool isClockwise, int playerCount) {
+    if (playerCount == 2) {
+      return (currentIndex + 1) % 2;
+    }
+    return isClockwise 
+        ? (currentIndex + 1) % playerCount 
+        : (currentIndex - 1 + playerCount) % playerCount;
+  }
+
+  int _getPrevPlayerIndex(int currentIndex, bool isClockwise, int playerCount) {
+    if (playerCount == 2) {
+      return (currentIndex + 1) % 2;
+    }
+    return isClockwise 
+        ? (currentIndex - 1 + playerCount) % playerCount 
+        : (currentIndex + 1) % playerCount;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -790,7 +810,11 @@ class _GameScreenState extends State<GameScreen>
     }
     
     final currentHand = _gameState.currentHand(_gameState.currentPlayer);
-    if (currentHand.length == 1 && _gameState.currentPlayer == widget.playerName && !_unoPressed) {
+    // УНО только если это НЕ бот и нет pending ответа
+    if (currentHand.length == 1 && 
+        _gameState.currentPlayer == widget.playerName && 
+        !_unoPressed &&
+        _gameState.pendingResponsePlayer == null) {
       _needUnoButton = true;
       _pulseController.repeat(reverse: true);
       _startUnoTimer();
@@ -818,7 +842,6 @@ class _GameScreenState extends State<GameScreen>
   UnoCard? _getResponseCard(String player, CardColor chosenColor, CardType attackCardType) {
     final hand = _gameState.playerHands[player] ?? [];
     
-    // Приоритет: +8 > +4 > +2 (самые сильные сначала)
     for (var card in hand) {
       if (card.type == CardType.wildDraw8 && card.canRespondToDraw(chosenColor, attackCardType)) {
         return card;
@@ -838,19 +861,30 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _throwDrawTwo(UnoCard card) {
-    _gameState.nextTurn();
-    final nextPlayer = _gameState.currentPlayer;
+    // Находим следующего игрока ДО смены хода
+    final nextIndex = _getNextPlayerIndex(
+      _gameState.currentPlayerIndex, 
+      _gameState.isClockwise, 
+      _gameState.playerCount
+    );
+    final nextPlayer = _gameState.playerOrder[nextIndex];
+    
     _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(2));
     _gameState.drawPileCount = _deck.cards.length;
+    
+    _gameState.nextTurn();
   }
   
   void _throwWildDraw(UnoCard card) {
     final isDraw8 = card.type == CardType.wildDraw8;
     final baseDraw = isDraw8 ? 8 : 4;
     
-    final nextIndex = _gameState.isClockwise
-        ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
-        : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
+    // Находим следующего игрока
+    final nextIndex = _getNextPlayerIndex(
+      _gameState.currentPlayerIndex, 
+      _gameState.isClockwise, 
+      _gameState.playerCount
+    );
     final nextPlayer = _gameState.playerOrder[nextIndex];
     final nextHand = _gameState.playerHands[nextPlayer] ?? [];
     final chosenColor = _gameState.chosenColor;
@@ -897,12 +931,15 @@ class _GameScreenState extends State<GameScreen>
     final attackType = _gameState.pendingAttackCardType;
     
     if (isDraw2) {
-      final prevIndex = _gameState.isClockwise
-          ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
-          : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
-      final prevPlayer = _gameState.playerOrder[prevIndex];
+      // Находим атакованного игрока (того, кто должен взять карты)
+      final attackedPlayerIndex = _getPrevPlayerIndex(
+        _gameState.currentPlayerIndex,
+        _gameState.isClockwise,
+        _gameState.playerCount
+      );
+      final attackedPlayer = _gameState.playerOrder[attackedPlayerIndex];
       final drawCount = _gameState.pendingDrawCount ?? 0;
-      _gameState.playerHands[prevPlayer]!.addAll(_deck.drawMultiple(drawCount));
+      _gameState.playerHands[attackedPlayer]!.addAll(_deck.drawMultiple(drawCount));
       _gameState.pendingResponsePlayer = null;
       _gameState.pendingDrawCount = 0;
       _gameState.pendingAttackCardType = null;
@@ -911,7 +948,6 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
-      // Проверяем, не бот ли это - для ботов не показываем диалог!
       if (widget.playerName.startsWith('Бот')) {
         final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
         _onResponseColorChosenForBot(newColor);
@@ -936,9 +972,11 @@ class _GameScreenState extends State<GameScreen>
     _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
     _gameState.pendingAttackCardType = card.type;
     
-    final nextIndex = _gameState.isClockwise
-        ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
-        : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
+    final nextIndex = _getNextPlayerIndex(
+      _gameState.currentPlayerIndex,
+      _gameState.isClockwise,
+      _gameState.playerCount
+    );
     final nextPlayer = _gameState.playerOrder[nextIndex];
     final nextHand = _gameState.playerHands[nextPlayer] ?? [];
     
@@ -967,7 +1005,6 @@ class _GameScreenState extends State<GameScreen>
     if (_choosingResponseColor) return;
     if (!mounted) return;
     
-    // НЕ ПОКАЗЫВАЕМ диалог для ботов!
     if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
@@ -985,7 +1022,6 @@ class _GameScreenState extends State<GameScreen>
     if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
     if (!mounted) return;
     
-    // НЕ ПОКАЗЫВАЕМ диалог для ботов!
     if (widget.playerName.startsWith('Бот')) return;
     
     _isResponseColorPickerShowing = true;
@@ -1117,9 +1153,11 @@ class _GameScreenState extends State<GameScreen>
     _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
     _gameState.pendingAttackCardType = card.type;
     
-    final nextIndex = _gameState.isClockwise
-        ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
-        : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
+    final nextIndex = _getNextPlayerIndex(
+      _gameState.currentPlayerIndex,
+      _gameState.isClockwise,
+      _gameState.playerCount
+    );
     final nextPlayer = _gameState.playerOrder[nextIndex];
     final nextHand = _gameState.playerHands[nextPlayer] ?? [];
     
@@ -1148,27 +1186,30 @@ class _GameScreenState extends State<GameScreen>
     final hand = _gameState.playerHands[currentPlayer] ?? [];
     final toRemove = hand.where((c) => c.color == color).toList();
     
-    if (toRemove.isNotEmpty) {
-      for (var card in toRemove) {
-        _gameState.playerHands[currentPlayer]!.removeWhere((c) => c.id == card.id);
-        _gameState.discardPile.add(card);
-      }
-      
+    if (toRemove.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('🧹 Вы сбросили ${toRemove.length} ${_colorName(color)} карт вместе с clear!'),
-          backgroundColor: _getColorForCard(color),
-          duration: const Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ Нет карт этого цвета для сброса!'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('⚠️ У вас нет ${_colorName(color)} карт для сброса!'),
-          backgroundColor: Colors.grey,
-          duration: const Duration(seconds: 1),
-        ));
-      }
+      return;
+    }
+    
+    for (var card in toRemove) {
+      _gameState.playerHands[currentPlayer]!.removeWhere((c) => c.id == card.id);
+      _gameState.discardPile.add(card);
+    }
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('🧹 Вы сбросили ${toRemove.length} ${_colorName(color)} карт вместе с clear!'),
+        backgroundColor: _getColorForCard(color),
+        duration: const Duration(seconds: 2),
+      ));
     }
     
     if (_gameState.playerHands[currentPlayer]!.isEmpty && _gameState.winner == null) {
@@ -1230,7 +1271,8 @@ class _GameScreenState extends State<GameScreen>
         break;
       case CardType.reverse:
         if (_gameState.playerCount == 2) {
-          _gameState.nextTurn();
+          // При 2 игроках reverse даёт ещё один ход текущему игроку
+          // Не меняем индекс, просто остаёмся
         } else {
           _gameState.isClockwise = !_gameState.isClockwise;
           _gameState.nextTurn();
@@ -1286,12 +1328,14 @@ class _GameScreenState extends State<GameScreen>
             final isDraw8 = responseCard.type == CardType.wildDraw8;
             
             if (isDraw2) {
-              final prevIndex = _gameState.isClockwise
-                  ? (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount
-                  : (_gameState.currentPlayerIndex + 1) % _gameState.playerCount;
-              final prevPlayer = _gameState.playerOrder[prevIndex];
+              final attackedPlayerIndex = _getPrevPlayerIndex(
+                _gameState.currentPlayerIndex,
+                _gameState.isClockwise,
+                _gameState.playerCount
+              );
+              final attackedPlayer = _gameState.playerOrder[attackedPlayerIndex];
               final drawCount = _gameState.pendingDrawCount ?? 0;
-              _gameState.playerHands[prevPlayer]!.addAll(_deck.drawMultiple(drawCount));
+              _gameState.playerHands[attackedPlayer]!.addAll(_deck.drawMultiple(drawCount));
               _gameState.pendingResponsePlayer = null;
               _gameState.pendingDrawCount = 0;
               _gameState.pendingAttackCardType = null;
@@ -1304,9 +1348,11 @@ class _GameScreenState extends State<GameScreen>
               _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
               _gameState.pendingAttackCardType = responseCard.type;
               
-              final nextIndex = _gameState.isClockwise
-                  ? (_gameState.currentPlayerIndex + 1) % _gameState.playerCount
-                  : (_gameState.currentPlayerIndex - 1 + _gameState.playerCount) % _gameState.playerCount;
+              final nextIndex = _getNextPlayerIndex(
+                _gameState.currentPlayerIndex,
+                _gameState.isClockwise,
+                _gameState.playerCount
+              );
               final nextPlayer = _gameState.playerOrder[nextIndex];
               final nextHand = _gameState.playerHands[nextPlayer] ?? [];
               
@@ -1661,6 +1707,17 @@ class _GameScreenState extends State<GameScreen>
   void _executePlayCard(List<UnoCard> cards) async {
     if (cards.isEmpty || _isAnimating) return;
     
+    final lastCard = cards.last;
+    
+    // Проверка: для Wild карт должен быть выбран цвет
+    if ((lastCard.type == CardType.wildDraw4 || 
+         lastCard.type == CardType.wildDraw8 ||
+         lastCard.type == CardType.wild) && 
+        _gameState.chosenColor == null) {
+      debugPrint('❌ Ошибка: цвет не выбран для Wild карты!');
+      return;
+    }
+    
     _isAnimating = true;
     
     await Future.delayed(const Duration(milliseconds: 200));
@@ -1673,7 +1730,6 @@ class _GameScreenState extends State<GameScreen>
       await Future.delayed(const Duration(milliseconds: 50));
     }
     
-    final lastCard = sortedCards.last;
     _gameState.discardPile.add(lastCard);
     
     for (int i = 0; i < sortedCards.length - 1; i++) {
@@ -1682,7 +1738,7 @@ class _GameScreenState extends State<GameScreen>
     
     final handAfter = _gameState.currentHand(widget.playerName).length;
     
-    if (handBefore == cards.length + 1 && handAfter == 1 && !_unoPressed) {
+    if (handBefore == cards.length + 1 && handAfter == 1 && !_unoPressed && _gameState.pendingResponsePlayer == null) {
       _needUnoButton = true;
       _pulseController.repeat(reverse: true);
       _startUnoTimer();

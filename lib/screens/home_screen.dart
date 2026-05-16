@@ -378,75 +378,97 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _showJoinDialog(BuildContext context) {
-    final ipController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: const Row(
-          children: [
-            Icon(Icons.wifi, color: Color(0xFF448AFF)),
-            SizedBox(width: 12),
-            Text('Подключиться', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Введите IP адрес хоста',
-                style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ipController,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'Например: 192.168.1.5',
-                hintStyle: const TextStyle(color: Colors.grey),
-                labelText: 'IP адрес',
-                labelStyle: const TextStyle(color: Color(0xFF448AFF)),
-                prefixIcon:
-                    const Icon(Icons.computer, color: Color(0xFF448AFF)),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFF448AFF)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                      color: Color(0xFF448AFF), width: 2),
-                ),
+  // В home_screen.dart замените метод _showJoinDialog на этот:
+
+void _showJoinDialog(BuildContext context) {
+  final roomIdController = TextEditingController();
+  final playerNameController = TextEditingController();
+  
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: const Color(0xFF1A1A2E),
+      title: const Row(
+        children: [
+          Icon(Icons.wifi, color: Color(0xFF448AFF)),
+          SizedBox(width: 12),
+          Text('Подключиться к игре', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Введите ID комнаты и ваше имя', style: TextStyle(color: Colors.grey)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: roomIdController,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'ID комнаты (например: a1b2c3d4)',
+              hintStyle: const TextStyle(color: Colors.grey),
+              labelText: 'ID комнаты',
+              labelStyle: const TextStyle(color: Color(0xFF448AFF)),
+              prefixIcon: const Icon(Icons.meeting_room, color: Color(0xFF448AFF)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF448AFF)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF448AFF), width: 2),
               ),
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена', style: TextStyle(color: Colors.grey)),
           ),
-          ElevatedButton(
-            onPressed: () {
-              final ip = ipController.text.trim();
-              if (ip.isNotEmpty) {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        LobbyScreen(isHost: false, hostIp: ip),
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF448AFF)),
-            child: const Text('Подключиться'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: playerNameController,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Ваше имя',
+              hintStyle: const TextStyle(color: Colors.grey),
+              labelText: 'Имя игрока',
+              labelStyle: const TextStyle(color: Color(0xFF448AFF)),
+              prefixIcon: const Icon(Icons.person, color: Color(0xFF448AFF)),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF448AFF)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF448AFF), width: 2),
+              ),
+            ),
           ),
         ],
       ),
-    );
-  }
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Отмена', style: TextStyle(color: Colors.grey)),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final roomId = roomIdController.text.trim().toLowerCase();
+            final playerName = playerNameController.text.trim();
+            if (roomId.isNotEmpty && playerName.isNotEmpty) {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LobbyScreen(
+                    isHost: false, 
+                    roomId: roomId,
+                  ),
+                ),
+              );
+            }
+          },
+          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF448AFF)),
+          child: const Text('Подключиться'),
+        ),
+      ],
+    ),
+  );
+}
 }

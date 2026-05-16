@@ -24,151 +24,251 @@ class GameMessage {
     final map = jsonDecode(json);
     return GameMessage(
       type: GameMessageType.values.byName(map['type']),
-      data: map['data'],
+      data: map['data'] ?? {},
+      fromPlayer: map['fromPlayer'],
+    );
+  }
+  
+  // Для серверного протокола
+  Map<String, dynamic> toServerMap() {
+    return {
+      'type': type.name,
+      'data': data,
+      'fromPlayer': fromPlayer,
+    };
+  }
+  
+  factory GameMessage.fromServerMap(Map<String, dynamic> map) {
+    return GameMessage(
+      type: GameMessageType.values.byName(map['type']),
+      data: map['data'] ?? {},
       fromPlayer: map['fromPlayer'],
     );
   }
 }
 
 class GameServer {
-  HttpServer? _server;
-  WebSocket? _clientSocket;
-  final List<WebSocket> _clients = [];
+  WebSocket? _socket;
   final List<String> _players = [];
-  final int port;
-  Function(GameMessage)? onMessage;
   String _playerName = '';
-
-  GameServer({this.port = 8080});
-
-  bool get isHosting => _server != null;
-  bool get isConnected => _clientSocket != null;
+  String? _roomId;
+  String? _connectionId;
+  Function(GameMessage)? onMessage;
+  Function(String)? onConnected;
+  Function(String)? onDisconnected;
+  Function(List<String>)? onPlayerListChanged;
+  
+  bool get isConnected => _socket != null;
   List<String> get players => List.unmodifiable(_players);
   String get playerName => _playerName;
+  String? get roomId => _roomId;
 
-  Future<String> getLocalIp() async {
-    final interfaces = await NetworkInterface.list();
-    for (var interface in interfaces) {
-      for (var addr in interface.addresses) {
-        if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
-          return addr.address;
-        }
-      }
-    }
-    return '127.0.0.1';
+  // Генерация уникального ID клиента
+  String _generateClientId() {
+    return 'client_${DateTime.now().millisecondsSinceEpoch}_${_randomString(6)}';
   }
-
-  // Запуск сервера (хост)
-  Future<void> startHost(String playerName, VoidCallback onPlayerJoined) async {
+  
+  String _randomString(int length) {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    return List.generate(length, (_) => chars[DateTime.now().millisecondsSinceEpoch % chars.length]).join();
+  }
+  
+  // Создание комнаты (хост)
+  Future<bool> createRoom(String playerName) async {
     _playerName = playerName;
-    _players.add(playerName);
+    _connectionId = _generateClientId();
     
-    _server = await HttpServer.bind(InternetAddress.anyIPv4, port);
-    debugPrint('Сервер запущен на порту $port');
-
-    _server!.listen((HttpRequest request) {
-      if (WebSocketTransformer.isUpgradeRequest(request)) {
-        WebSocketTransformer.upgrade(request).then((WebSocket socket) {
-          _clients.add(socket);
-          final newPlayer = 'Игрок ${_players.length}';
-          _players.add(newPlayer);
-
-          // Отправляем новому игроку его имя
-          socket.add(GameMessage(
-            type: GameMessageType.join,
-            data: {'playerName': newPlayer, 'players': _players},
-          ).toJson());
-
-          // Всем остальным — обновлённый список
-          _broadcast(GameMessage(
-            type: GameMessageType.playerList,
-            data: {'players': _players},
-          ), exclude: socket);
-
-          onPlayerJoined();
-
-          socket.listen((data) {
-            final message = GameMessage.fromJson(data);
-            if (onMessage != null) onMessage!(message);
-            // Пересылаем всем кроме отправителя
-            _broadcast(message, exclude: socket);
-          }, onDone: () {
-            final idx = _clients.indexOf(socket);
-            if (idx >= 0) {
-              _clients.removeAt(idx);
-              _players.removeAt(idx + 1);
-            }
-            _broadcast(GameMessage(
-              type: GameMessageType.playerList,
-              data: {'players': _players},
+    try {
+      _socket = await WebSocket.connect('ws://95.183.11.203:6000/ws/$_connectionId');
+      _socket!.listen(_handleMessage, onDone: _handleDisconnect, onError: _handleError);
+      
+      // Отправляем запрос на создание комнаты
+      _send({
+        'type': 'create_room',
+        'playerName': playerName,
+      });
+      
+      return true;
+    } catch (e) {
+      debugPrint('❌ Ошибка подключения: $e');
+      return false;
+    }
+  }
+  
+  // Подключение к существующей комнате
+  Future<bool> joinRoom(String roomId, String playerName) async {
+    _playerName = playerName;
+    _roomId = roomId;
+    _connectionId = _generateClientId();
+    
+    try {
+      _socket = await WebSocket.connect('ws://95.183.11.203:6000/ws/$_connectionId');
+      _socket!.listen(_handleMessage, onDone: _handleDisconnect, onError: _handleError);
+      
+      // Отправляем запрос на подключение к комнате
+      _send({
+        'type': 'join_room',
+        'roomId': roomId,
+        'playerName': playerName,
+      });
+      
+      return true;
+    } catch (e) {
+      debugPrint('❌ Ошибка подключения: $e');
+      return false;
+    }
+  }
+  
+  // Начать игру (только для хоста)
+  void startGame() {
+    _send({
+      'type': 'start_game',
+    });
+  }
+  
+  // Отправить состояние игры
+  void sendGameState(Map<String, dynamic> gameState) {
+    _send({
+      'type': 'game_state',
+      'data': gameState,
+    });
+  }
+  
+  // Отправить сообщение в чат
+  void sendChatMessage(String player, String message) {
+    _send({
+      'type': 'chat',
+      'player': player,
+      'message': message,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+  
+  // Покинуть комнату
+  void leaveRoom() {
+    _send({
+      'type': 'leave_room',
+    });
+    _closeSocket();
+  }
+  
+  void _send(Map<String, dynamic> message) {
+    if (_socket != null) {
+      _socket!.add(jsonEncode(message));
+    }
+  }
+  
+  void _handleMessage(dynamic data) {
+    try {
+      final Map<String, dynamic> json = jsonDecode(data as String);
+      final type = json['type'] as String;
+      
+      debugPrint('📨 Получено сообщение: $type');
+      
+      switch (type) {
+        case 'room_created':
+          _roomId = json['room_id'];
+          _players.clear();
+          _players.addAll(List<String>.from(json['players']));
+          if (onConnected != null) onConnected!(_roomId!);
+          if (onPlayerListChanged != null) onPlayerListChanged!(_players);
+          break;
+          
+        case 'joined':
+          _roomId = json['room_id'];
+          _players.clear();
+          _players.addAll(List<String>.from(json['players']));
+          if (onConnected != null) onConnected!(_roomId!);
+          if (onPlayerListChanged != null) onPlayerListChanged!(_players);
+          break;
+          
+        case 'player_list':
+          _players.clear();
+          _players.addAll(List<String>.from(json['players']));
+          if (onPlayerListChanged != null) onPlayerListChanged!(_players);
+          break;
+          
+        case 'start_game':
+          if (onMessage != null) {
+            onMessage!(GameMessage(
+              type: GameMessageType.startGame,
+              data: {'players': json['players']},
             ));
-          });
-        });
+          }
+          break;
+          
+        case 'game_state':
+          if (onMessage != null) {
+            onMessage!(GameMessage(
+              type: GameMessageType.gameState,
+              data: json['data'] ?? {},
+            ));
+          }
+          break;
+          
+        case 'chat':
+          if (onMessage != null) {
+            onMessage!(GameMessage(
+              type: GameMessageType.chat,
+              data: {
+                'player': json['player'],
+                'message': json['message'],
+                'timestamp': json['timestamp'],
+              },
+            ));
+          }
+          break;
+          
+        case 'host_changed':
+          debugPrint('👑 Новый хост: ${json['new_host']}');
+          break;
+          
+        case 'error':
+          debugPrint('❌ Ошибка сервера: ${json['message']}');
+          break;
+          
+        case 'pong':
+          // Ответ на ping
+          break;
+          
+        default:
+          debugPrint('⚠️ Неизвестный тип сообщения: $type');
       }
-    });
-  }
-
-  // Подключение к серверу (клиент)
-  Future<void> connectToHost(String ip, String playerName) async {
-    _playerName = playerName;
-    _clientSocket = await WebSocket.connect('ws://$ip:$port');
-    
-    // Отправляем запрос на присоединение
-    _clientSocket!.add(GameMessage(
-      type: GameMessageType.join,
-      data: {'playerName': playerName},
-    ).toJson());
-
-    _clientSocket!.listen((data) {
-      final message = GameMessage.fromJson(data);
-      if (message.type == GameMessageType.join) {
-        _players.clear();
-        _players.addAll(List<String>.from(message.data['players']));
-        _playerName = message.data['playerName'];
-      } else if (message.type == GameMessageType.playerList) {
-        _players.clear();
-        _players.addAll(List<String>.from(message.data['players']));
-      }
-      if (onMessage != null) onMessage!(message);
-    });
-  }
-
-  void _broadcast(GameMessage message, {WebSocket? exclude}) {
-    final json = message.toJson();
-    for (var client in _clients) {
-      if (client != exclude) {
-        client.add(json);
-      }
+    } catch (e) {
+      debugPrint('❌ Ошибка обработки сообщения: $e');
     }
   }
-
-  void sendToHost(GameMessage message) {
-    if (_clientSocket != null) {
-      _clientSocket!.add(message.toJson());
-    } else if (_server != null) {
-      if (onMessage != null) onMessage!(message);
-      _broadcast(message);
-    }
+  
+  void _handleDisconnect() {
+    debugPrint('🔌 Соединение разорвано');
+    _closeSocket();
+    if (onDisconnected != null) onDisconnected!('Соединение с сервером потеряно');
   }
-
-  void broadcastAll(GameMessage message) {
-    if (_server != null) {
-      _broadcast(message);
-      if (onMessage != null) onMessage!(message);
-    } else if (_clientSocket != null) {
-      _clientSocket!.add(message.toJson());
-    }
+  
+  void _handleError(dynamic error) {
+    debugPrint('❌ Ошибка WebSocket: $error');
+    _closeSocket();
+    if (onDisconnected != null) onDisconnected!('Ошибка соединения: $error');
   }
-
+  
+  void _closeSocket() {
+    _socket?.close();
+    _socket = null;
+  }
+  
   void stop() {
-    for (var client in _clients) {
-      client.close();
+    _closeSocket();
+  }
+  
+  // Пинг для поддержания соединения
+  void startPing() {
+    Future.delayed(const Duration(seconds: 30), _pingLoop);
+  }
+  
+  void _pingLoop() {
+    if (_socket != null) {
+      _send({'type': 'ping'});
+      Future.delayed(const Duration(seconds: 30), _pingLoop);
     }
-    _clientSocket?.close();
-    _server?.close();
-    _server = null;
-    _clientSocket = null;
-    _clients.clear();
-    _players.clear();
   }
 }

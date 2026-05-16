@@ -5,8 +5,9 @@ import 'game_screen.dart';
 class LobbyScreen extends StatefulWidget {
   final bool isHost;
   final String? hostIp;
+  final String? roomId;
 
-  const LobbyScreen({super.key, required this.isHost, this.hostIp});
+  const LobbyScreen({super.key, required this.isHost, this.hostIp, this.roomId});
 
   @override
   State<LobbyScreen> createState() => _LobbyScreenState();
@@ -15,95 +16,98 @@ class LobbyScreen extends StatefulWidget {
 class _LobbyScreenState extends State<LobbyScreen> {
   final GameServer _server = GameServer();
   final List<String> _players = [];
-  String? _myIp;
+  String? _roomId;
   bool _connected = false;
   String _playerName = '';
+  String _connectionStatus = 'Подключение...';
 
   @override
   void initState() {
     super.initState();
     _playerName = widget.isHost ? 'Хост' : 'Гость';
-    
-    if (widget.isHost) {
-      _startHosting();
-    } else {
-      _connectToHost();
-    }
+    _setupServer();
   }
 
-  Future<void> _startHosting() async {
-    _myIp = await _server.getLocalIp();
-    await _server.startHost(_playerName, () {
+  Future<void> _setupServer() async {
+    _server.onMessage = (GameMessage message) {
+      if (message.type == GameMessageType.startGame && mounted) {
+        _navigateToGame();
+      }
+    };
+    
+    _server.onPlayerListChanged = (players) {
       if (mounted) {
         setState(() {
           _players.clear();
-          _players.addAll(_server.players);
+          _players.addAll(players);
         });
       }
-    });
-    setState(() {
-      _connected = true;
-      _players.clear();
-      _players.addAll(_server.players);
-    });
-  }
-
-  Future<void> _connectToHost() async {
-    if (widget.hostIp == null) return;
-    try {
-      await _server.connectToHost(widget.hostIp!, _playerName);
-      setState(() {
-        _connected = true;
-        _players.clear();
-        _players.addAll(_server.players);
-      });
-
-      _server.onMessage = (GameMessage message) {
-        if (mounted) {
-          setState(() {
-            _players.clear();
-            _players.addAll(_server.players);
-          });
-
-          if (message.type == GameMessageType.startGame) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GameScreen(
-                  server: _server,
-                  players: List.from(_server.players),
-                  isHost: false,
-                  playerName: _server.playerName,
-                ),
-              ),
-            );
-          }
-        }
-      };
-    } catch (e) {
+    };
+    
+    _server.onConnected = (roomId) {
       if (mounted) {
+        setState(() {
+          _roomId = roomId;
+          _connected = true;
+          _connectionStatus = 'Подключено';
+        });
+      }
+    };
+    
+    _server.onDisconnected = (message) {
+      if (mounted) {
+        setState(() {
+          _connected = false;
+          _connectionStatus = message;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Ошибка подключения: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
+    };
+    
+    bool success;
+    if (widget.isHost) {
+      success = await _server.createRoom(_playerName);
+    } else {
+      if (widget.roomId != null) {
+        success = await _server.joinRoom(widget.roomId!, _playerName);
+      } else {
+        success = false;
+        _connectionStatus = 'ID комнаты не указан';
+      }
     }
+    
+    if (!success && mounted) {
+      setState(() {
+        _connectionStatus = 'Ошибка подключения';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось подключиться к серверу'), backgroundColor: Colors.red),
+      );
+    }
+    
+    _server.startPing();
   }
 
-  void _startGame() {
+  void _navigateToGame() {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (_) => GameScreen(
           server: _server,
           players: List.from(_players),
-          isHost: true,
+          isHost: widget.isHost,
           playerName: _playerName,
         ),
       ),
     );
+  }
+
+  void _startGame() {
+    if (_players.length >= 2) {
+      _server.startGame();
+    }
   }
 
   @override
@@ -117,7 +121,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            if (widget.isHost && _myIp != null) ...[
+            if (!_connected) ...[
+              Card(
+                color: Colors.orange.withOpacity(0.2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(_connectionStatus, style: const TextStyle(color: Colors.white)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+            
+            if (widget.isHost && _connected && _roomId != null) ...[
               Card(
                 color: Colors.blue.withOpacity(0.2),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -130,16 +152,16 @@ class _LobbyScreenState extends State<LobbyScreen> {
                         children: [
                           Icon(Icons.info_outline, color: Colors.blue),
                           SizedBox(width: 8),
-                          Text('Ваш IP адрес',
-                              style: TextStyle(fontSize: 16, color: Colors.blue)),
+                          Text('ID комнаты', style: TextStyle(fontSize: 16, color: Colors.blue)),
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Text(_myIp!,
-                          style: const TextStyle(
-                              fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2)),
+                      SelectableText(
+                        _roomId!,
+                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 2),
+                      ),
                       const SizedBox(height: 8),
-                      const Text('Скажите друзьям этот адрес',
+                      const Text('Скажите этот код друзьям для подключения',
                           style: TextStyle(color: Colors.grey)),
                     ],
                   ),
@@ -147,23 +169,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
               ),
               const SizedBox(height: 24),
             ],
-            if (!widget.isHost && !_connected) ...[
-              const Card(
-                color: Colors.orange,
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(width: 16),
-                      Text('Подключение...'),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
+            
             Row(
               children: [
                 const Icon(Icons.people, color: Colors.white),
@@ -198,7 +204,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                       ),
                     ),
             ),
-            if (widget.isHost)
+            if (widget.isHost && _connected)
               Padding(
                 padding: const EdgeInsets.only(top: 16),
                 child: SizedBox(
@@ -224,7 +230,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
   @override
   void dispose() {
-    if (widget.isHost) _server.stop();
+    _server.stop();
     super.dispose();
   }
 }

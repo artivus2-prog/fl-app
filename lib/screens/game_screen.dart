@@ -1,3 +1,5 @@
+Вот полный исправленный файл `game_screen.dart` с корректной логикой для 2 игроков и цепочек доборов:
+
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -136,7 +138,7 @@ class _AnimatedCardState extends State<AnimatedCard> with SingleTickerProviderSt
         displayText = '+2';
         break;
       case CardType.wild:
-        displayText = 'W';
+        displayText = 'ЦВЕТ';
         break;
       case CardType.wildDraw4:
         displayText = '+4';
@@ -866,11 +868,34 @@ class _GameScreenState extends State<GameScreen>
       _gameState.playerCount
     );
     final nextPlayer = _gameState.playerOrder[nextIndex];
+    final nextHand = _gameState.playerHands[nextPlayer] ?? [];
+    final chosenColor = _gameState.chosenColor;
     
-    _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(2));
-    _gameState.drawPileCount = _deck.cards.length;
+    final canRespond = _canRespondToDraw(nextPlayer, chosenColor ?? CardColor.red, CardType.draw2);
+    final onlyOneCard = canRespond && nextHand.length == 1;
     
-    _gameState.nextTurn();
+    if (onlyOneCard) {
+      _gameState.winner = nextPlayer;
+      _gameState.playerHands[nextPlayer]!.clear();
+      return;
+    }
+    
+    if (canRespond && nextHand.length > 1) {
+      _gameState.pendingResponsePlayer = nextPlayer;
+      _gameState.pendingDrawCount = 2;
+      _gameState.pendingAttackCardType = CardType.draw2;
+      debugPrint('⏳ Игрок $nextPlayer может ответить на +2, ждём ответа...');
+    } else {
+      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(2));
+      _gameState.drawPileCount = _deck.cards.length;
+      
+      if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+        _gameState.winner = nextPlayer;
+      }
+      
+      // Ход остаётся у текущего игрока (кто сыграл +2)
+      debugPrint('📥 Игрок $nextPlayer взял 2 карты, ход остаётся у ${_gameState.currentPlayer}');
+    }
   }
   
   void _throwWildDraw(UnoCard card) {
@@ -908,6 +933,7 @@ class _GameScreenState extends State<GameScreen>
     
     if (canRespond && nextHand.length > 1) {
       _gameState.pendingResponsePlayer = nextPlayer;
+      debugPrint('⏳ Игрок $nextPlayer может ответить на ${card.type}, ждём ответа...');
     } else {
       final drawCount = _gameState.pendingDrawCount ?? 0;
       _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
@@ -931,31 +957,172 @@ class _GameScreenState extends State<GameScreen>
     final isDraw2 = card.type == CardType.draw2;
     final isDraw4 = card.type == CardType.wildDraw4;
     final isDraw8 = card.type == CardType.wildDraw8;
+    final attackType = _gameState.pendingAttackCardType;
     
-    if (isDraw2) {
-      final attackedPlayerIndex = _getPrevPlayerIndex(
-        _gameState.currentPlayerIndex,
-        _gameState.isClockwise,
-        _gameState.playerCount
-      );
-      final attackedPlayer = _gameState.playerOrder[attackedPlayerIndex];
-      final drawCount = _gameState.pendingDrawCount ?? 0;
-      _gameState.playerHands[attackedPlayer]!.addAll(_deck.drawMultiple(drawCount));
+    // Рассчитываем новый штраф
+    int addDraw = 0;
+    if (isDraw2) addDraw = 2;
+    if (isDraw4) addDraw = 4;
+    if (isDraw8) addDraw = 8;
+    
+    final newDrawCount = (_gameState.pendingDrawCount ?? 0) + addDraw;
+    _gameState.pendingDrawCount = newDrawCount;
+    _gameState.pendingAttackCardType = card.type;
+    
+    // Определяем следующего игрока (противоположного)
+    final nextPlayerIndex = _getNextPlayerIndex(
+      _gameState.currentPlayerIndex,
+      _gameState.isClockwise,
+      _gameState.playerCount
+    );
+    final nextPlayer = _gameState.playerOrder[nextPlayerIndex];
+    final nextHand = _gameState.playerHands[nextPlayer] ?? [];
+    final chosenColor = _gameState.chosenColor;
+    
+    // Проверяем, может ли следующий игрок ответить
+    bool canRespondNext = false;
+    if (card.type == CardType.draw2) {
+      canRespondNext = _canRespondToDraw(nextPlayer, chosenColor ?? CardColor.red, CardType.draw2);
+    } else if (card.type == CardType.wildDraw4) {
+      canRespondNext = _canRespondToDraw(nextPlayer, chosenColor ?? CardColor.red, CardType.wildDraw4);
+    } else if (card.type == CardType.wildDraw8) {
+      canRespondNext = _canRespondToDraw(nextPlayer, chosenColor ?? CardColor.red, CardType.wildDraw8);
+    }
+    
+    final onlyOneCard = canRespondNext && nextHand.length == 1;
+    
+    if (onlyOneCard) {
+      _gameState.winner = nextPlayer;
+      _gameState.playerHands[nextPlayer]!.clear();
       _gameState.pendingResponsePlayer = null;
       _gameState.pendingDrawCount = 0;
       _gameState.pendingAttackCardType = null;
-      _gameState.nextTurn();
       _updateTurn();
       _broadcastState();
-    } else if (isDraw4 || isDraw8) {
-      _pendingResponseCard = card;
-      if (widget.playerName.startsWith('Бот')) {
-        final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
-        _onResponseColorChosenForBot(newColor);
-      } else {
-        _showResponseColorPickerForCard(card);
-      }
+      return;
     }
+    
+    if (canRespondNext && nextHand.length > 1) {
+      // Следующий игрок может ответить - переключаем ход на него
+      _gameState.pendingResponsePlayer = nextPlayer;
+      _gameState.currentPlayerIndex = nextPlayerIndex;
+      debugPrint('⏳ Цепочка: игрок $nextPlayer может ответить, штраф = $newDrawCount');
+      
+      // Если это +4 или +8 и нужно выбрать цвет
+      if ((isDraw4 || isDraw8) && nextHand.length > 1) {
+        _pendingResponseCard = card;
+        if (widget.playerName.startsWith('Бот')) {
+          final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
+          _onResponseColorChained(newColor);
+        } else {
+          _showResponseColorPickerForCardChained(card);
+        }
+        return;
+      }
+    } else {
+      // Следующий игрок не может ответить - берёт карты
+      _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(newDrawCount));
+      _gameState.pendingResponsePlayer = null;
+      _gameState.pendingDrawCount = 0;
+      _gameState.pendingAttackCardType = null;
+      
+      if (_gameState.playerHands[nextPlayer]!.isEmpty) {
+        _gameState.winner = nextPlayer;
+      }
+      
+      // Ход переходит к тому, кто сыграл последнюю карту
+      _gameState.currentPlayerIndex = nextPlayerIndex;
+      _gameState.nextTurn();
+      debugPrint('📥 Игрок $nextPlayer взял $newDrawCount карт, ход переходит к ${_gameState.currentPlayer}');
+    }
+    
+    _updateTurn();
+    _broadcastState();
+  }
+
+  void _onResponseColorChained(CardColor color) {
+    if (_pendingResponseCard == null) return;
+    
+    _pendingResponseCard = null;
+    _gameState.chosenColor = color;
+    
+    _updateTurn();
+    _broadcastState();
+  }
+
+  void _showResponseColorPickerForCardChained(UnoCard card) {
+    if (_isResponseColorPickerShowing) return;
+    if (_choosingResponseColor) return;
+    if (!mounted) return;
+    if (widget.playerName.startsWith('Бot')) return;
+    
+    setState(() {
+      _choosingResponseColor = true;
+    });
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _choosingResponseColor && !widget.playerName.startsWith('Бот')) {
+        _showResponseColorPickerChained();
+      }
+    });
+  }
+
+  void _showResponseColorPickerChained() {
+    if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
+    if (!mounted) return;
+    if (widget.playerName.startsWith('Бот')) return;
+    
+    _isResponseColorPickerShowing = true;
+    
+    showDialog(
+      context: context, 
+      barrierDismissible: false,
+      builder: (ctx) => WillPopScope(
+        onWillPop: () async {
+          _cancelResponseColorPick();
+          return false;
+        },
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.color_lens, color: Colors.orange, size: 32),
+              SizedBox(width: 12),
+              Text('Выберите цвет', style: TextStyle(color: Colors.white, fontSize: 20)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Штраф: ${_gameState.pendingDrawCount} карт\nВыберите следующий цвет:',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey, fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _buildResponseColorOption(CardColor.red, 'Красный', Colors.red, ctx),
+                  _buildResponseColorOption(CardColor.blue, 'Синий', Colors.blue, ctx),
+                  _buildResponseColorOption(CardColor.green, 'Зелёный', Colors.green, ctx),
+                  _buildResponseColorOption(CardColor.yellow, 'Жёлтый', Colors.amber, ctx),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      if (mounted) {
+        _isResponseColorPickerShowing = false;
+        if (_choosingResponseColor) {
+          _cancelResponseColorPick();
+        }
+      }
+    });
   }
 
   void _onResponseColorChosenForBot(CardColor color) {
@@ -1003,7 +1170,6 @@ class _GameScreenState extends State<GameScreen>
     if (_isResponseColorPickerShowing) return;
     if (_choosingResponseColor) return;
     if (!mounted) return;
-    
     if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
@@ -1020,7 +1186,6 @@ class _GameScreenState extends State<GameScreen>
   void _showResponseColorPicker() {
     if (!_choosingResponseColor || _isResponseColorPickerShowing) return;
     if (!mounted) return;
-    
     if (widget.playerName.startsWith('Бот')) return;
     
     _isResponseColorPickerShowing = true;
@@ -1263,26 +1428,39 @@ class _GameScreenState extends State<GameScreen>
     ));
   }
 
-void _applyCardEffect(UnoCard card) {
-  switch (card.type) {
-    case CardType.skip:
-      _gameState.nextTurn();
-      break;
-    case CardType.reverse:
-      if (_gameState.playerCount == 2) {
-        // При 2 игроках reverse даёт ещё один ход текущему игроку
-        // Не вызываем nextTurn(), просто остаёмся
-        debugPrint('🔄 Reverse при 2 игроках: дополнительный ход для ${_gameState.currentPlayer}');
-        // Ничего не делаем - ход остаётся у текущего игрока
-      } else {
-        _gameState.isClockwise = !_gameState.isClockwise;
-        _gameState.nextTurn();
-      }
-      break;
-    default:
-      break;
+  void _applyCardEffect(UnoCard card) {
+    switch (card.type) {
+      case CardType.skip:
+        // Skip при 2 игроках: дополнительный ход текущему игроку
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⏭️ Пропуск хода соперника! Вы ходите ещё раз!'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+        break;
+      case CardType.reverse:
+        if (_gameState.playerCount == 2) {
+          // Reverse = Skip при 2 игроках
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🔄 Реверс! Вы ходите ещё раз!'),
+                duration: Duration(seconds: 1),
+              ),
+            );
+          }
+        } else {
+          _gameState.isClockwise = !_gameState.isClockwise;
+          _gameState.nextTurn();
+        }
+        break;
+      default:
+        break;
+    }
   }
-}
 
   void _botMove() {
     if (!mounted || !_isBotTurn || !widget.isHost) return;
@@ -1328,47 +1506,32 @@ void _applyCardEffect(UnoCard card) {
             final isDraw4 = responseCard.type == CardType.wildDraw4;
             final isDraw8 = responseCard.type == CardType.wildDraw8;
             
-            if (isDraw2) {
-              final attackedPlayerIndex = _getPrevPlayerIndex(
-                _gameState.currentPlayerIndex,
-                _gameState.isClockwise,
-                _gameState.playerCount
-              );
-              final attackedPlayer = _gameState.playerOrder[attackedPlayerIndex];
+            final addDraw = isDraw2 ? 2 : (isDraw4 ? 4 : (isDraw8 ? 8 : 0));
+            final newDrawCount = (_gameState.pendingDrawCount ?? 0) + addDraw;
+            _gameState.pendingDrawCount = newDrawCount;
+            _gameState.pendingAttackCardType = responseCard.type;
+            
+            final nextPlayerIndex = _getNextPlayerIndex(
+              _gameState.currentPlayerIndex,
+              _gameState.isClockwise,
+              _gameState.playerCount
+            );
+            final nextPlayer = _gameState.playerOrder[nextPlayerIndex];
+            final nextHand = _gameState.playerHands[nextPlayer] ?? [];
+            
+            final canRespondNext = _canRespondToDraw(nextPlayer, _gameState.chosenColor!, responseCard.type);
+            
+            if (canRespondNext && nextHand.length > 1) {
+              _gameState.pendingResponsePlayer = nextPlayer;
+              _gameState.currentPlayerIndex = nextPlayerIndex;
+            } else {
               final drawCount = _gameState.pendingDrawCount ?? 0;
-              _gameState.playerHands[attackedPlayer]!.addAll(_deck.drawMultiple(drawCount));
+              _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
               _gameState.pendingResponsePlayer = null;
               _gameState.pendingDrawCount = 0;
               _gameState.pendingAttackCardType = null;
+              _gameState.currentPlayerIndex = nextPlayerIndex;
               _gameState.nextTurn();
-            } else if (isDraw4 || isDraw8) {
-              final baseDraw = isDraw8 ? 8 : 4;
-              final newColor = _bot.chooseColor(_gameState.playerHands[botName]!);
-              _gameState.chosenColor = newColor;
-              
-              _gameState.pendingDrawCount = (_gameState.pendingDrawCount ?? 0) + baseDraw;
-              _gameState.pendingAttackCardType = responseCard.type;
-              
-              final nextIndex = _getNextPlayerIndex(
-                _gameState.currentPlayerIndex,
-                _gameState.isClockwise,
-                _gameState.playerCount
-              );
-              final nextPlayer = _gameState.playerOrder[nextIndex];
-              final nextHand = _gameState.playerHands[nextPlayer] ?? [];
-              
-              final canRespondNext = _canRespondToDraw(nextPlayer, newColor, responseCard.type);
-              
-              if (canRespondNext && nextHand.length > 1) {
-                _gameState.pendingResponsePlayer = nextPlayer;
-              } else {
-                final drawCount = _gameState.pendingDrawCount ?? 0;
-                _gameState.playerHands[nextPlayer]!.addAll(_deck.drawMultiple(drawCount));
-                _gameState.pendingResponsePlayer = null;
-                _gameState.pendingDrawCount = 0;
-                _gameState.pendingAttackCardType = null;
-                _gameState.nextTurn();
-              }
             }
             
             setState(() => _updateTurn());
@@ -1419,7 +1582,9 @@ void _applyCardEffect(UnoCard card) {
       _gameState.nextTurn();
     } else if (chosenCard.type == CardType.draw2) {
       _throwDrawTwo(chosenCard);
-      _gameState.nextTurn();
+      if (_gameState.pendingResponsePlayer == null) {
+        _gameState.nextTurn();
+      }
     } else if (chosenCard.type == CardType.wildDraw4 || chosenCard.type == CardType.wildDraw8) {
       if (_gameState.chosenColor == null) {
         _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
@@ -1769,17 +1934,21 @@ void _applyCardEffect(UnoCard card) {
       _gameState.nextTurn();
     } else if (lastCard.type == CardType.draw2) {
       _throwDrawTwo(lastCard);
+      if (_gameState.pendingResponsePlayer == null) {
+        _gameState.nextTurn();
+      }
     } else if (lastCard.type == CardType.wildDraw4 || lastCard.type == CardType.wildDraw8) {
       _throwWildDraw(lastCard);
       if (_gameState.pendingResponsePlayer != null) {
         _gameState.nextTurn();
       }
-      // Если pendingResponsePlayer == null, ход остаётся у текущего игрока
+      // Если ответа нет - ход остаётся у текущего игрока
     } else {
       _applyCardEffect(lastCard);
       if (lastCard.type == CardType.number) {
         _gameState.nextTurn();
       }
+      // Skip и Reverse - ход остаётся у текущего
     }
     
     _updateTurn();
@@ -1914,7 +2083,6 @@ void _applyCardEffect(UnoCard card) {
     final myHand = _gameState.currentHand(widget.playerName);
     final isPending = _gameState.pendingResponsePlayer == widget.playerName;
     final canDraw = _isMyTurn || isPending;
-    final multiCards = _getMultiPlayableCards();
 
     return Scaffold(
       backgroundColor: _backgroundColor,

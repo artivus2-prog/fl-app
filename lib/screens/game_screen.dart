@@ -944,7 +944,8 @@ class _GameScreenState extends State<GameScreen>
       debugPrint('📥 Игрок $nextPlayer взял $drawCount карт, ход остаётся у ${_gameState.currentPlayer}');
     }
   }
-    void _respondToPending(UnoCard card) {
+
+  void _respondToPending(UnoCard card) {
     debugPrint('🎯 _respondToPending: ${card.type} ${card.color}');
     
     _gameState.playerHands[widget.playerName]!.removeWhere((c) => c.id == card.id);
@@ -953,7 +954,6 @@ class _GameScreenState extends State<GameScreen>
     final isDraw2 = card.type == CardType.draw2;
     final isDraw4 = card.type == CardType.wildDraw4;
     final isDraw8 = card.type == CardType.wildDraw8;
-    final attackType = _gameState.pendingAttackCardType;
     
     // Рассчитываем новый штраф
     int addDraw = 0;
@@ -1035,8 +1035,7 @@ class _GameScreenState extends State<GameScreen>
     _updateTurn();
     _broadcastState();
   }
-
-  void _onResponseColorChained(CardColor color) {
+    void _onResponseColorChained(CardColor color) {
     if (_pendingResponseCard == null) return;
     
     _pendingResponseCard = null;
@@ -1559,7 +1558,6 @@ class _GameScreenState extends State<GameScreen>
         _gameState.nextTurn();
       }
     } else if (chosenCard.type == CardType.skip) {
-      // Skip - дополнительный ход
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1568,7 +1566,6 @@ class _GameScreenState extends State<GameScreen>
           ),
         );
       }
-      // Ход остаётся у бота
     } else if (chosenCard.type == CardType.reverse) {
       if (_gameState.playerCount == 2) {
         if (mounted) {
@@ -1697,9 +1694,11 @@ class _GameScreenState extends State<GameScreen>
         canRespond = _gameState.chosenColor != null && 
             card.canRespondToDraw(_gameState.chosenColor, _gameState.pendingAttackCardType!);
       }
+      debugPrint('🔍 Ответ на ${_gameState.pendingAttackCardType}: карта ${card.type} ${card.color}, выбранный цвет=${_gameState.chosenColor}, canRespond=$canRespond');
     }
     
     if (canRespond) { 
+      debugPrint('✅ Ответ на добор картой: ${card.type} ${card.color}');
       _respondToPending(card); 
       return; 
     }

@@ -8,7 +8,7 @@ import '../models/bot_player.dart';
 import '../services/game_server.dart';
 import 'settings_screen.dart';
 
-// ========== АНИМИРОВАННЫЕ КОМПОНЕНТЫ ==========
+// ========== АНИМИРОВАННЫЕ КОМПОНЕНТЫ (оставляем без изменений) ==========
 
 class AnimatedCard extends StatefulWidget {
   final UnoCard card;
@@ -810,7 +810,6 @@ class _GameScreenState extends State<GameScreen>
     }
     
     final currentHand = _gameState.currentHand(_gameState.currentPlayer);
-    // УНО только если это НЕ бот и нет pending ответа
     if (currentHand.length == 1 && 
         _gameState.currentPlayer == widget.playerName && 
         !_unoPressed &&
@@ -861,7 +860,6 @@ class _GameScreenState extends State<GameScreen>
   }
 
   void _throwDrawTwo(UnoCard card) {
-    // Находим следующего игрока ДО смены хода
     final nextIndex = _getNextPlayerIndex(
       _gameState.currentPlayerIndex, 
       _gameState.isClockwise, 
@@ -879,7 +877,6 @@ class _GameScreenState extends State<GameScreen>
     final isDraw8 = card.type == CardType.wildDraw8;
     final baseDraw = isDraw8 ? 8 : 4;
     
-    // Находим следующего игрока
     final nextIndex = _getNextPlayerIndex(
       _gameState.currentPlayerIndex, 
       _gameState.isClockwise, 
@@ -928,10 +925,8 @@ class _GameScreenState extends State<GameScreen>
     final isDraw2 = card.type == CardType.draw2;
     final isDraw4 = card.type == CardType.wildDraw4;
     final isDraw8 = card.type == CardType.wildDraw8;
-    final attackType = _gameState.pendingAttackCardType;
     
     if (isDraw2) {
-      // Находим атакованного игрока (того, кто должен взять карты)
       final attackedPlayerIndex = _getPrevPlayerIndex(
         _gameState.currentPlayerIndex,
         _gameState.isClockwise,
@@ -948,6 +943,7 @@ class _GameScreenState extends State<GameScreen>
       _broadcastState();
     } else if (isDraw4 || isDraw8) {
       _pendingResponseCard = card;
+      // ⭐ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: для ботов не показываем диалог
       if (widget.playerName.startsWith('Бот')) {
         final newColor = _bot.chooseColor(_gameState.playerHands[widget.playerName]!);
         _onResponseColorChosenForBot(newColor);
@@ -1005,6 +1001,7 @@ class _GameScreenState extends State<GameScreen>
     if (_choosingResponseColor) return;
     if (!mounted) return;
     
+    // ⭐ НЕ ПОКАЗЫВАЕМ диалог для ботов!
     if (widget.playerName.startsWith('Бот')) return;
     
     setState(() {
@@ -1272,7 +1269,7 @@ class _GameScreenState extends State<GameScreen>
       case CardType.reverse:
         if (_gameState.playerCount == 2) {
           // При 2 игроках reverse даёт ещё один ход текущему игроку
-          // Не меняем индекс, просто остаёмся
+          // Не меняем индекс
         } else {
           _gameState.isClockwise = !_gameState.isClockwise;
           _gameState.nextTurn();
@@ -1409,6 +1406,7 @@ class _GameScreenState extends State<GameScreen>
       _applyBotUnoPenalty(botName);
     }
 
+    // ⭐ КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: для диких карт бот выбирает цвет без диалога
     if (chosenCard.color == CardColor.wild && chosenCard.type != CardType.wild) {
       _gameState.chosenColor = _bot.chooseColor(_gameState.playerHands[botName]!);
     }
@@ -1548,7 +1546,6 @@ class _GameScreenState extends State<GameScreen>
     bool canPlay = card.canPlayOn(_gameState.topCard, chosenColor: _gameState.chosenColor);
     if (!canPlay) return;
     
-    // Двойной тап для быстрого сброса
     if (_lastTappedCardId == card.id && canPlay) {
       _lastTapTimer?.cancel(); 
       _lastTappedCardId = null;
@@ -1559,7 +1556,13 @@ class _GameScreenState extends State<GameScreen>
         });
       }
       if (card.color == CardColor.wild && card.type != CardType.wild) {
-        _showColorPickerForCard(card);
+        // ⭐ Для ботов не показываем диалог выбора цвета
+        if (widget.playerName.startsWith('Бот')) {
+          _gameState.chosenColor = _bot.chooseColor(_gameState.currentHand(widget.playerName));
+          _executePlayCard([card]);
+        } else {
+          _showColorPickerForCard(card);
+        }
       } else {
         _executePlayCard([card]);
       }
@@ -1572,13 +1575,17 @@ class _GameScreenState extends State<GameScreen>
       _lastTappedCardId = null; 
     });
     
-    // Дикие карты кроме W - выбор цвета
     if (card.color == CardColor.wild && card.type != CardType.wild) {
-      _showColorPickerForCard(card);
+      // ⭐ Для ботов не показываем диалог выбора цвета
+      if (widget.playerName.startsWith('Бот')) {
+        _gameState.chosenColor = _bot.chooseColor(_gameState.currentHand(widget.playerName));
+        _executePlayCard([card]);
+      } else {
+        _showColorPickerForCard(card);
+      }
       return;
     }
     
-    // Числовые карты - проверка мульти-сброса
     if (card.type == CardType.number) {
       final sameNumberCards = _getSameNumberCards(card.number!);
       if (sameNumberCards.length >= 2) {
@@ -1925,7 +1932,6 @@ class _GameScreenState extends State<GameScreen>
                           _buildDiscardPile(),
                         ],
                       ),
-                      // Кнопка подтверждения мульти-сброса
                       if (_multiSelectMode && _selectedCardIds.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 16),

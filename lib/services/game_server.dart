@@ -64,7 +64,7 @@ class GameServer {
     
     try {
       // Локальный сервер
-      final url = 'ws://192.168.1.151:6000/ws/${_connectionId}';
+      final url = 'ws://192.168.1.151:8080/ws/${_connectionId}';
       debugPrint('🔌 Подключение к локальному серверу: $url');
       
       _socket = await WebSocket.connect(url);
@@ -90,7 +90,7 @@ class GameServer {
     _isHost = false;
     
     try {
-      final url = 'ws://192.168.1.151:6000/ws/${_connectionId}';
+      final url = 'ws://192.168.1.151:8080/ws/${_connectionId}';
       debugPrint('🔌 Подключение к локальному серверу: $url');
       
       _socket = await WebSocket.connect(url);
@@ -263,3 +263,8 @@ class GameServer {
     }
   }
 }
+
+// const ws = new WebSocket('ws://192.168.1.151:6000/ws/test');
+// ws.onopen = () => console.log('✅ Подключено!');
+// ws.onmessage = (e) => console.log(e.data);
+// ws.send(JSON.stringify({type: 'create_room', playerName: 'Test'}));

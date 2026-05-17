@@ -1,3 +1,5 @@
+// lib/services/game_server.dart
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -28,23 +30,6 @@ class GameMessage {
       fromPlayer: map['fromPlayer'],
     );
   }
-  
-  // Для серверного протокола
-  Map<String, dynamic> toServerMap() {
-    return {
-      'type': type.name,
-      'data': data,
-      'fromPlayer': fromPlayer,
-    };
-  }
-  
-  factory GameMessage.fromServerMap(Map<String, dynamic> map) {
-    return GameMessage(
-      type: GameMessageType.values.byName(map['type']),
-      data: map['data'] ?? {},
-      fromPlayer: map['fromPlayer'],
-    );
-  }
 }
 
 class GameServer {
@@ -58,7 +43,7 @@ class GameServer {
   Function(String)? onDisconnected;
   Function(List<String>)? onPlayerListChanged;
   
-  // Для хоста - список клиентов
+  // Для хоста
   final List<WebSocket> _clients = [];
   bool _isHost = false;
   
@@ -67,24 +52,22 @@ class GameServer {
   String get playerName => _playerName;
   String? get roomId => _roomId;
 
-  // Генерация уникального ID клиента
   String _generateClientId() {
-    return 'client_${DateTime.now().millisecondsSinceEpoch}_${_randomString(6)}';
+    return 'client_${DateTime.now().millisecondsSinceEpoch}_${DateTime.now().microsecondsSinceEpoch}';
   }
   
-  String _randomString(int length) {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    return List.generate(length, (_) => chars[DateTime.now().millisecondsSinceEpoch % chars.length]).join();
-  }
-  
-  // Создание комнаты (хост)
+  // ⭐ СОЗДАНИЕ КОМНАТЫ (локальный сервер)
   Future<bool> createRoom(String playerName) async {
     _playerName = playerName;
     _connectionId = _generateClientId();
     _isHost = true;
     
     try {
-      _socket = await WebSocket.connect('ws://95.183.11.203:6000/ws/$_connectionId');
+      // Локальный сервер
+      final url = 'ws://192.168.1.151:6000/ws/${_connectionId}';
+      debugPrint('🔌 Подключение к локальному серверу: $url');
+      
+      _socket = await WebSocket.connect(url);
       _socket!.listen(_handleMessage, onDone: _handleDisconnect, onError: _handleError);
       
       _send({
@@ -99,7 +82,7 @@ class GameServer {
     }
   }
   
-  // Подключение к существующей комнате
+  // ⭐ ПОДКЛЮЧЕНИЕ К КОМНАТЕ (локальный сервер)
   Future<bool> joinRoom(String roomId, String playerName) async {
     _playerName = playerName;
     _roomId = roomId;
@@ -107,7 +90,10 @@ class GameServer {
     _isHost = false;
     
     try {
-      _socket = await WebSocket.connect('ws://95.183.11.203:6000/ws/$_connectionId');
+      final url = 'ws://192.168.1.151:6000/ws/${_connectionId}';
+      debugPrint('🔌 Подключение к локальному серверу: $url');
+      
+      _socket = await WebSocket.connect(url);
       _socket!.listen(_handleMessage, onDone: _handleDisconnect, onError: _handleError);
       
       _send({
@@ -123,27 +109,20 @@ class GameServer {
     }
   }
   
-  // Отправить сообщение всем (только для хоста)
   void broadcastAll(GameMessage message) {
     if (_isHost) {
-      // Хост рассылает всем клиентам
       final json = message.toJson();
       for (var client in _clients) {
         client.add(json);
       }
     }
-    // Также отправляем себе
     if (onMessage != null) onMessage!(message);
   }
   
-  // Начать игру (только для хоста)
   void startGame() {
-    _send({
-      'type': 'start_game',
-    });
+    _send({'type': 'start_game'});
   }
   
-  // Отправить состояние игры
   void sendGameState(Map<String, dynamic> gameState) {
     _send({
       'type': 'game_state',
@@ -151,7 +130,6 @@ class GameServer {
     });
   }
   
-  // Отправить сообщение в чат
   void sendChatMessage(String player, String message) {
     _send({
       'type': 'chat',
@@ -161,11 +139,8 @@ class GameServer {
     });
   }
   
-  // Покинуть комнату
   void leaveRoom() {
-    _send({
-      'type': 'leave_room',
-    });
+    _send({'type': 'leave_room'});
     _closeSocket();
   }
   
@@ -180,9 +155,13 @@ class GameServer {
       final Map<String, dynamic> json = jsonDecode(data as String);
       final type = json['type'] as String;
       
-      debugPrint('📨 Получено сообщение: $type');
+      debugPrint('📨 Получено: $type');
       
       switch (type) {
+        case 'connected':
+          debugPrint('✅ Соединение установлено');
+          break;
+          
         case 'room_created':
           _roomId = json['room_id'];
           _players.clear();
@@ -236,37 +215,31 @@ class GameServer {
           }
           break;
           
-        case 'host_changed':
-          debugPrint('👑 Новый хост: ${json['new_host']}');
+        case 'pong':
           break;
           
         case 'error':
-          debugPrint('❌ Ошибка сервера: ${json['message']}');
-          if (onDisconnected != null) onDisconnected!(json['message']);
-          break;
-          
-        case 'pong':
-          // Ответ на ping
+          debugPrint('❌ Ошибка: ${json['message']}');
           break;
           
         default:
-          debugPrint('⚠️ Неизвестный тип сообщения: $type');
+          debugPrint('⚠️ Неизвестный тип: $type');
       }
     } catch (e) {
-      debugPrint('❌ Ошибка обработки сообщения: $e');
+      debugPrint('❌ Ошибка парсинга: $e');
     }
   }
   
   void _handleDisconnect() {
     debugPrint('🔌 Соединение разорвано');
     _closeSocket();
-    if (onDisconnected != null) onDisconnected!('Соединение с сервером потеряно');
+    if (onDisconnected != null) onDisconnected!('Соединение потеряно');
   }
   
   void _handleError(dynamic error) {
-    debugPrint('❌ Ошибка WebSocket: $error');
+    debugPrint('❌ Ошибка: $error');
     _closeSocket();
-    if (onDisconnected != null) onDisconnected!('Ошибка соединения: $error');
+    if (onDisconnected != null) onDisconnected!('Ошибка: $error');
   }
   
   void _closeSocket() {
@@ -279,7 +252,6 @@ class GameServer {
     _closeSocket();
   }
   
-  // Пинг для поддержания соединения
   void startPing() {
     Future.delayed(const Duration(seconds: 30), _pingLoop);
   }

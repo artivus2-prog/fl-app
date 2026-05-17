@@ -52,7 +52,19 @@ class _AnimatedCardState extends State<AnimatedCard> with SingleTickerProviderSt
       parent: _scaleController,
       curve: Curves.easeInOut,
     ));
-    
+    if (!widget.isHost) {
+    widget.server.onMessage = (message) {
+      if (message.type == GameMessageType.gameState) {
+        debugPrint('📨 Получено состояние игры от сервера');
+        final newState = UnoGameState.fromJson(message.data);
+        setState(() {
+          _gameState = newState;
+          _gameStarted = true;
+          _isMyTurn = _gameState.currentPlayer == widget.playerName;
+        });
+      }
+    };
+  }
     if (widget.isDiscard) {
       _flipController.forward();
     }
@@ -711,10 +723,34 @@ class _GameScreenState extends State<GameScreen>
     super.dispose();
   }
 
+  void _updateGameState() {
+  if (mounted) {
+    setState(() {
+      // Обновляем состояние
+    });
+  }
+  void sendGameState(Map<String, dynamic> gameState) {
+  debugPrint('📤 Отправка game_state: $gameState');
+  broadcastAll(GameMessage(
+    type: GameMessageType.gameState,
+    data: gameState,
+  ));
+}
+  // ⭐ ОТПРАВЛЯЕМ СОСТОЯНИЕ ВСЕМ ИГРОКАМ (если хост)
+  if (widget.isHost && _gameState != null) {
+    widget.server.sendGameState(_gameState!.toJson());
+    debugPrint('📤 Хост отправил состояние игры');
+  }
+  }
+
   void _startGameAsHost() {
     _deck = UnoDeck(seed: DateTime.now().millisecondsSinceEpoch);
     
     Map<String, List<UnoCard>> hands = {};
+    if (widget.isHost) {
+    widget.server.sendGameState(_gameState!.toJson());
+    debugPrint('📤 Хост отправил начальное состояние игры');
+  }
     for (var player in widget.players) {
       hands[player] = _deck.drawMultiple(7);
     }

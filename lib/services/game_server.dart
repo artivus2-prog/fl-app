@@ -123,12 +123,15 @@ class GameServer {
     _send({'type': 'start_game'});
   }
   
-  void sendGameState(Map<String, dynamic> gameState) {
-    _send({
-      'type': 'game_state',
-      'data': gameState,
-    });
-  }
+// В класс GameServer добавьте:
+
+void sendGameState(Map<String, dynamic> gameState) {
+  debugPrint('📤 Отправка game_state: $gameState');
+  broadcastAll(GameMessage(
+    type: GameMessageType.gameState,
+    data: gameState,
+  ));
+}
   
   void sendChatMessage(String player, String message) {
     _send({
